@@ -31,6 +31,8 @@ export component AppWindow inherits Window {
     in property <bool> is-unpatch-mode: false;
     in property <bool> has-selection: false;
     in property <string> app-version;
+    property <int> glitch-frame: 0;
+    property <bool> glitch-on: Math.mod(glitch-frame, 17) == 0 || Math.mod(glitch-frame, 29) == 0;
 
     callback activate();
     callback toggle-select(int);
@@ -42,6 +44,13 @@ export component AppWindow inherits Window {
     callback drag_window();
 
     Timer { interval: 150ms; running: root.working; triggered => { root.poll(); } }
+    Timer {
+        interval: 110ms;
+        running: true;
+        triggered => {
+            root.glitch-frame = Math.mod(root.glitch-frame + 1, 180);
+        }
+    }
 
     VerticalLayout {
         spacing: 0;
@@ -102,6 +111,32 @@ export component AppWindow inherits Window {
         }
     }
 
+    // 背景扫描线 (装饰层, 不参与交互)
+    Rectangle {
+        x: 0;
+        y: 54px + Math.mod(root.glitch-frame * 3, 180) * 1px;
+        width: 100%;
+        height: 1px;
+        background: Theme.cyan-50;
+        opacity: 0.10;
+    }
+    Rectangle {
+        x: 0;
+        y: 96px + Math.mod(root.glitch-frame * 5, 120) * 1px;
+        width: 100%;
+        height: 1px;
+        background: Theme.magenta-50;
+        opacity: root.glitch-on ? 0.22 : 0.07;
+    }
+    Rectangle {
+        x: 0;
+        y: 150px + Math.mod(root.glitch-frame * 2, 90) * 1px;
+        width: 100%;
+        height: 1px;
+        background: #ffd400;
+        opacity: root.glitch-on ? 0.16 : 0.04;
+    }
+
     // 外层 1px 霓虹边 (置顶, 不阻挡事件)
     Rectangle {
         x: 0; y: 0; width: 100%; height: 100%;
@@ -109,6 +144,22 @@ export component AppWindow inherits Window {
         border-width: 1px;
         border-color: Theme.magenta-50;
         opacity: 0.6;
+    }
+    Rectangle {
+        x: Math.mod(root.glitch-frame * 23, 360) * 1px;
+        y: 0;
+        width: root.glitch-on ? 64px : 28px;
+        height: 1px;
+        background: root.glitch-on ? #ffd400 : Theme.cyan-50;
+        opacity: root.glitch-on ? 0.9 : 0.4;
+    }
+    Rectangle {
+        x: parent.width - 1px;
+        y: Math.mod(root.glitch-frame * 11, 260) * 1px;
+        width: 1px;
+        height: root.glitch-on ? 54px : 20px;
+        background: Theme.cyan-50;
+        opacity: root.glitch-on ? 0.8 : 0.35;
     }
 
     // === 结果 Dialog: 成功=青描边, 失败=品红描边 ===
@@ -119,6 +170,7 @@ export component AppWindow inherits Window {
         property <color> accent-glow: root.result-ok == 1 ? Theme.cyan-glow : Theme.magenta-glow;
         property <color> accent-bright: root.result-ok == 1 ? Theme.cyan-bright : Theme.magenta-bright;
         property <color> secondary-color: root.result-ok == 1 ? Theme.magenta-50 : Theme.cyan-50;
+        property <bool> dlg-glitch: Math.mod(root.glitch-frame, 9) == 0;
 
         // 外发光层
         Rectangle {
@@ -133,6 +185,14 @@ export component AppWindow inherits Window {
             drop-shadow-blur: 20px;
             drop-shadow-offset-x: 0;
             drop-shadow-offset-y: 0;
+        }
+        Rectangle {
+            width: dlg.dlg-glitch ? 160px : 72px;
+            height: 2px;
+            x: (parent.width - 360px) / 2 + 20px + Math.mod(root.glitch-frame * 19, 160) * 1px;
+            y: (parent.height - 160px) / 2 - 2px;
+            background: dlg.dlg-glitch ? #ffd400 : dlg.secondary-color;
+            opacity: dlg.dlg-glitch ? 0.95 : 0.35;
         }
 
         Rectangle {

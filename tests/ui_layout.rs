@@ -9,6 +9,8 @@ fn application_icon_is_wired_to_window_and_executable() {
 
     assert!(app_window.contains("icon: @image-url(\"assets/app-icon.png\");"));
     assert!(app_window.contains("border-color: Theme.magenta-50;"));
+    assert!(app_window.contains("背景扫描线"));
+    assert!(app_window.contains("dlg-glitch"));
     assert!(status_bar.contains("source: @image-url(\"../assets/app-icon.png\");"));
     assert!(status_bar.contains("y: (parent.height - self.height) / 2;"));
     assert!(status_bar.contains("width: 20px;"));
@@ -51,4 +53,5 @@ fn action_bar_does_not_expand_over_content() {
     assert!(source.contains("min-height: 44px;"));
     assert!(source.contains("max-height: 44px;"));
     assert!(source.contains("vertical-stretch: 0;"));
+    assert!(source.contains("btn-area.has-hover && !root.disabled"));
 }

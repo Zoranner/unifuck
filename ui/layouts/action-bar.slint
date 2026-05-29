@@ -68,6 +68,24 @@ export component ActionBar inherits Rectangle {
                 clicked => { root.activate(); }
             }
 
+            if btn-area.has-hover && !root.disabled : Rectangle {
+                x: 8px;
+                y: -1px;
+                width: 38px;
+                height: 1px;
+                background: Theme.cyan-50;
+                opacity: 0.9;
+            }
+
+            if btn-area.has-hover && !root.disabled : Rectangle {
+                x: parent.width - 52px;
+                y: parent.height;
+                width: 44px;
+                height: 1px;
+                background: Theme.magenta-50;
+                opacity: 0.85;
+            }
+
             // 内描边 (双色霓虹: hover 时品红, 默认青)
             Rectangle {
                 x: 2px; y: 2px;
