@@ -13,6 +13,7 @@ fn main() -> anyhow::Result<()> {
     let window = gui::AppWindow::new()?;
     let state = Rc::new(RefCell::new(AppState::new()));
 
+    window.set_app_version(env!("CARGO_PKG_VERSION").into());
     sync_ui(&window, &state.borrow());
     gui::bindings::connect(&window, state.clone());
 

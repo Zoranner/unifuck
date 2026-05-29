@@ -1,0 +1,67 @@
+import { Theme } from "../styles/theme.slint";
+
+// 警示栏: 黄黑斜条滚动 + 警示文字
+export component WarningBanner inherits Rectangle {
+    min-height: 20px;
+    max-height: 20px;
+    vertical-stretch: 0;
+    clip: true;
+    background: #1a1a1a;
+
+    property <float> phase: 0;
+
+    Timer {
+        interval: 30ms;
+        running: true;
+        triggered => {
+            root.phase = mod(root.phase + 1, 80);
+        }
+    }
+
+    // 黄黑斜条层
+    // 推导: 135° 渐变 axis_length = √2/2 × (W+H); 20 道条纹 → 10 对, 每对沿轴长 = axis_length/10。
+    //   水平视觉周期 = 一对沿轴长 / sinθ = (√2/2·(W+H)/10) / (√2/2) = (W+H)/10。
+    //   令水平周期 = 80px → W+H = 800, H=20 → W = 780。x 在 [0, -80px] 间循环即无缝。
+    Rectangle {
+        x: -root.phase * 1px;
+        y: 0;
+        width: 780px;
+        height: 100%;
+        background: @linear-gradient(135deg,
+            #ffd400 0%, #ffd400 5%,
+            #1a1a1a 5%, #1a1a1a 10%,
+            #ffd400 10%, #ffd400 15%,
+            #1a1a1a 15%, #1a1a1a 20%,
+            #ffd400 20%, #ffd400 25%,
+            #1a1a1a 25%, #1a1a1a 30%,
+            #ffd400 30%, #ffd400 35%,
+            #1a1a1a 35%, #1a1a1a 40%,
+            #ffd400 40%, #ffd400 45%,
+            #1a1a1a 45%, #1a1a1a 50%,
+            #ffd400 50%, #ffd400 55%,
+            #1a1a1a 55%, #1a1a1a 60%,
+            #ffd400 60%, #ffd400 65%,
+            #1a1a1a 65%, #1a1a1a 70%,
+            #ffd400 70%, #ffd400 75%,
+            #1a1a1a 75%, #1a1a1a 80%,
+            #ffd400 80%, #ffd400 85%,
+            #1a1a1a 85%, #1a1a1a 90%,
+            #ffd400 90%, #ffd400 95%,
+            #1a1a1a 95%, #1a1a1a 100%
+        );
+        opacity: 0.5;
+    }
+
+    // 警示文字 (居中, 黄色加粗)
+    Text {
+        width: 100%; height: 100%;
+        text: "⚠ FOR RESEARCH USE ONLY · NOT FOR COMMERCIAL USE ⚠";
+        font-family: Theme.font-mono;
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        color: #ffe066;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+}

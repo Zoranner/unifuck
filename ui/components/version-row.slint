@@ -8,11 +8,13 @@ export component VersionRow inherits Rectangle {
     in property <string> status-label;
     in property <color> status-color;
     in property <bool> locked;
+    in property <bool> disabled;
     callback toggled;
 
     height: 44px;
     horizontal-stretch: 1;
-    background: area.has-hover ? Theme.purple-bg-2 : transparent;
+    background: (!root.disabled && area.has-hover) ? Theme.purple-bg-2 : transparent;
+    opacity: root.disabled ? 0.35 : 1;
 
     // 底部 1px 暗紫分隔线
     Rectangle {
@@ -23,7 +25,8 @@ export component VersionRow inherits Rectangle {
 
     area := TouchArea {
         width: 100%; height: 100%;
-        clicked => { if !root.locked { root.toggled(); } }
+        mouse-cursor: root.disabled ? default : pointer;
+        clicked => { if !root.locked && !root.disabled { root.toggled(); } }
     }
 
     // 左 4px 状态色条 (始终用 status-color, hover 时发光加强)
@@ -32,7 +35,7 @@ export component VersionRow inherits Rectangle {
         width: 4px; height: 100%;
         background: root.status-color;
         drop-shadow-color: root.status-color;
-        drop-shadow-blur: area.has-hover ? 10px : 4px;
+        drop-shadow-blur: (!root.disabled && area.has-hover) ? 10px : 4px;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
     }
@@ -45,11 +48,11 @@ export component VersionRow inherits Rectangle {
         border-width: 1px;
         border-color: root.selected
             ? Theme.magenta-50
-            : area.has-hover ? Theme.cyan-50 : Theme.purple-line;
+            : (!root.disabled && area.has-hover) ? Theme.cyan-50 : Theme.purple-line;
         background: root.selected ? Theme.magenta-50 : transparent;
         drop-shadow-color: root.selected
             ? Theme.magenta-glow
-            : area.has-hover ? Theme.cyan-glow-soft : transparent;
+            : (!root.disabled && area.has-hover) ? Theme.cyan-glow-soft : transparent;
         drop-shadow-blur: 6px;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
@@ -70,7 +73,7 @@ export component VersionRow inherits Rectangle {
         text: root.version;
         font-family: Theme.font-mono;
         font-size: Theme.font-lg; font-weight: 700;
-        color: area.has-hover ? Theme.cyan-bright : Theme.cyan-50;
+        color: (!root.disabled && area.has-hover) ? Theme.cyan-bright : Theme.cyan-50;
         vertical-alignment: center;
     }
 
@@ -95,9 +98,9 @@ export component VersionRow inherits Rectangle {
         border-width: 1px;
         border-color: root.status-color;
         border-radius: 2px;
-        background: root.status-color.with-alpha(0.15);
+        background: root.status-color.with-alpha(0.22);
         drop-shadow-color: root.status-color;
-        drop-shadow-blur: area.has-hover ? 8px : 4px;
+        drop-shadow-blur: (!root.disabled && area.has-hover) ? 8px : 4px;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
 
@@ -107,7 +110,7 @@ export component VersionRow inherits Rectangle {
             font-family: Theme.font-mono;
             font-size: Theme.font-sm;
             font-weight: 700;
-            color: root.status-color.brighter(0.3);
+            color: root.status-color.brighter(0.8);
             horizontal-alignment: center;
             vertical-alignment: center;
         }

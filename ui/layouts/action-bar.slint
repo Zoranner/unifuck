@@ -3,8 +3,11 @@ import { Theme } from "../styles/theme.slint";
 // 底栏: 居中霓虹发光按钮
 export component ActionBar inherits Rectangle {
     in property <bool> busy;
-    in property <bool> ok;
+    in property <bool> is-unpatch;
+    in property <bool> has-selection;
     callback activate();
+
+    property <bool> disabled: busy || !has-selection;
 
     min-height: 44px;
     max-height: 44px;
@@ -34,11 +37,11 @@ export component ActionBar inherits Rectangle {
 
         // 主按钮: 双层发光边框 + 等宽大写文字
         Rectangle {
-            width: 130px; height: 28px;
+            width: 150px; height: 28px;
             border-radius: Theme.radius-sm;
 
             // 外层发光 (品红光晕, hover 时变青)
-            drop-shadow-color: busy
+            drop-shadow-color: root.disabled
                 ? transparent
                 : btn-area.has-hover ? Theme.cyan-glow : Theme.magenta-glow-soft;
             drop-shadow-blur: btn-area.has-hover ? 16px : 10px;
@@ -47,20 +50,21 @@ export component ActionBar inherits Rectangle {
 
             // 边框
             border-width: 1px;
-            border-color: busy
+            border-color: root.disabled
                 ? Theme.purple-line
                 : btn-area.has-hover ? Theme.cyan-50 : Theme.magenta-50;
 
             // 背景: 深紫, hover 略亮
-            background: busy
+            background: root.disabled
                 ? Theme.purple-bg-2
                 : btn-area.pressed
                     ? Theme.purple-bg-4
                     : btn-area.has-hover ? Theme.purple-bg-3 : Theme.purple-bg-2;
-            opacity: busy ? 0.58 : 1;
+            opacity: root.disabled ? 0.45 : 1;
 
             btn-area := TouchArea {
-                enabled: !busy;
+                enabled: !root.disabled;
+                mouse-cursor: root.disabled ? default : pointer;
                 clicked => { root.activate(); }
             }
 
@@ -70,7 +74,7 @@ export component ActionBar inherits Rectangle {
                 width: parent.width - 4px;
                 height: parent.height - 4px;
                 border-width: 1px;
-                border-color: busy
+                border-color: root.disabled
                     ? transparent
                     : btn-area.has-hover ? Theme.magenta-50 : Theme.cyan-dim;
                 background: transparent;
@@ -78,12 +82,14 @@ export component ActionBar inherits Rectangle {
             }
 
             Text {
-                text: busy ? "PATCHING..." : ok ? "RE-PATCH" : "PATCH";
+                text: root.busy
+                    ? (root.is-unpatch ? "UN-PATCHING..." : "PATCHING...")
+                    : (root.is-unpatch ? "UN-PATCH" : "PATCH");
                 font-family: Theme.font-mono;
                 font-size: Theme.font-md;
                 font-weight: 700;
                 letter-spacing: 2px;
-                color: busy
+                color: root.disabled
                     ? Theme.text-dim
                     : btn-area.has-hover ? Theme.cyan-bright : Theme.text-bright;
                 horizontal-alignment: center;

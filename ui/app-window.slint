@@ -2,10 +2,12 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "styles/theme.slint";
 import { HeaderBar } from "layouts/status-bar.slint";
 import { ActionBar } from "layouts/action-bar.slint";
+import { WarningBanner } from "layouts/warning-banner.slint";
 import { VersionRow } from "components/version-row.slint";
 
 export struct InstallItem {
-    version: string, path: string, status: string, st-color: color, selected: bool,
+    version: string, path: string, status: string, st-color: color,
+    selected: bool, disabled: bool, patched: bool,
 }
 
 export component AppWindow inherits Window {
@@ -19,11 +21,15 @@ export component AppWindow inherits Window {
     in-out property <bool> show-result-dialog: false;
     in-out property <string> result-text: "";
     in property <int> result-ok: 0;
+    in property <int> result-mode: 0;   // 0=patch, 1=unpatch
     in-out property <string> status-text: "READY";
     in-out property <bool> working: false;
     in-out property <bool> done: false;
     in-out property <[InstallItem]> installs;
     in property <int> version-count: 0;
+    in property <bool> is-unpatch-mode: false;
+    in property <bool> has-selection: false;
+    in property <string> app-version;
 
     callback activate();
     callback toggle-select(int);
@@ -39,11 +45,14 @@ export component AppWindow inherits Window {
     VerticalLayout {
         spacing: 0;
         HeaderBar {
+            version: root.app-version;
             minimize => { root.minimize_window(); }
             close => { root.close_window(); }
             drag-start => { root.start_window_drag(); }
             drag-move => { root.drag_window(); }
         }
+
+        WarningBanner { }
 
         if root.version-count == 0 : Rectangle {
             vertical-stretch: 1;
@@ -75,14 +84,19 @@ export component AppWindow inherits Window {
                     selected: item.selected; version: item.version;
                     path: item.path; status-label: item.status;
                     status-color: item.st-color; locked: root.working;
+                    disabled: item.disabled;
                     toggled => { root.toggle-select(i); }
                 }
             }
         }
 
+        WarningBanner { }
+
         ActionBar {
             vertical-stretch: 0;
-            busy: root.working; ok: root.done;
+            busy: root.working;
+            is-unpatch: root.is-unpatch-mode;
+            has-selection: root.has-selection;
             activate => { root.activate(); }
         }
     }
@@ -147,7 +161,9 @@ export component AppWindow inherits Window {
                 spacing: Theme.space-sm;
 
                 Text {
-                    text: root.result-ok == 1 ? "✓ PATCH COMPLETE" : "✗ PATCH FAILED";
+                    text: root.result-ok == 1
+                        ? (root.result-mode == 1 ? "✅ UN-PATCH COMPLETE" : "✅ PATCH COMPLETE")
+                        : (root.result-mode == 1 ? "❌ UN-PATCH FAILED" : "❌ PATCH FAILED");
                     font-family: Theme.font-mono;
                     font-size: Theme.font-md;
                     font-weight: 700;
