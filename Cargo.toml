@@ -20,3 +20,4 @@ slint-build = "1"
 
 [target.'cfg(windows)'.build-dependencies]
 embed-manifest = "1"
+winresource = "0.1"

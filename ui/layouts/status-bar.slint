@@ -36,8 +36,13 @@ export component HeaderBar inherits Rectangle {
         height: 100%;
         spacing: Theme.space-sm;
         alignment: start;
+        Image {
+            width: 18px;
+            height: 18px;
+            source: @image-url("../assets/app-icon.png");
+        }
         Text {
-            text: "🔓 UNIFUCK";
+            text: "UNIFUCK";
             font-family: Theme.font-mono;
             font-size: Theme.font-md;
             font-weight: 700;
