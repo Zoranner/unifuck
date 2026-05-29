@@ -1,0 +1,95 @@
+import { Theme } from "../styles/theme.slint";
+
+// 顶栏: 全区拖动 TouchArea + 标题 + 右侧最小化/关闭 + 底部发光线
+export component HeaderBar inherits Rectangle {
+    callback minimize;
+    callback close;
+    callback drag-start;
+    callback drag-move;
+
+    min-height: 30px;
+    max-height: 30px;
+    vertical-stretch: 0;
+    background: Theme.purple-bg-1;
+
+    // 底边发光线 (青色)
+    Rectangle {
+        x: 0; y: parent.height - 1px;
+        width: 100%; height: 1px;
+        background: Theme.cyan-50;
+        opacity: 0.7;
+        drop-shadow-color: Theme.cyan-glow;
+        drop-shadow-blur: 6px;
+        drop-shadow-offset-x: 0;
+        drop-shadow-offset-y: 0;
+    }
+
+    // 拖动 TouchArea (排除右侧 72px 按钮区, 显式 30px 高度)
+    drag-area := TouchArea {
+        x: 0; y: 0;
+        width: parent.width - 72px;
+        height: 30px;
+        mouse-cursor: move;
+        pointer-event(event) => {
+            if (event.kind == PointerEventKind.down && event.button == PointerEventButton.left) {
+                root.drag-start();
+            }
+        }
+        moved => {
+            root.drag-move();
+        }
+    }
+
+    // 标题
+    Text {
+        x: Theme.space-md; y: 0;
+        height: 100%;
+        text: "▮ UNIFUCK";
+        font-family: Theme.font-mono;
+        font-size: Theme.font-md;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: Theme.magenta-50;
+        vertical-alignment: center;
+    }
+
+    // 最小化按钮
+    Rectangle {
+        x: parent.width - 72px; y: 0;
+        width: 36px; height: 100%;
+        background: min-area.has-hover ? Theme.purple-bg-3 : transparent;
+        min-area := TouchArea {
+            clicked => { root.minimize(); }
+        }
+        Text {
+            width: 100%; height: 100%;
+            text: "−";
+            font-family: Theme.font-mono;
+            font-size: 16px;
+            font-weight: 700;
+            color: min-area.has-hover ? Theme.cyan-bright : Theme.text-dim;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    // 关闭按钮
+    Rectangle {
+        x: parent.width - 36px; y: 0;
+        width: 36px; height: 100%;
+        background: close-area.has-hover ? Theme.magenta-glow-soft : transparent;
+        close-area := TouchArea {
+            clicked => { root.close(); }
+        }
+        Text {
+            width: 100%; height: 100%;
+            text: "×";
+            font-family: Theme.font-mono;
+            font-size: 18px;
+            font-weight: 700;
+            color: close-area.has-hover ? Theme.magenta-bright : Theme.text-dim;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

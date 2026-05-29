@@ -1,0 +1,115 @@
+import { Theme } from "../styles/theme.slint";
+
+// 扁平版本行: 左 4px 状态色条 (恒色) + 霓虹 checkbox + 右侧状态徽章
+export component VersionRow inherits Rectangle {
+    in-out property <bool> selected;
+    in property <string> version;
+    in property <string> path;
+    in property <string> status-label;
+    in property <color> status-color;
+    in property <bool> locked;
+    callback toggled;
+
+    height: 44px;
+    horizontal-stretch: 1;
+    background: area.has-hover ? Theme.purple-bg-2 : transparent;
+
+    // 底部 1px 暗紫分隔线
+    Rectangle {
+        x: 0; y: parent.height - 1px;
+        width: 100%; height: 1px;
+        background: #2a1a4a;
+    }
+
+    area := TouchArea {
+        width: 100%; height: 100%;
+        clicked => { if !root.locked { root.toggled(); } }
+    }
+
+    // 左 4px 状态色条 (始终用 status-color, hover 时发光加强)
+    Rectangle {
+        x: 0; y: 0;
+        width: 4px; height: 100%;
+        background: root.status-color;
+        drop-shadow-color: root.status-color;
+        drop-shadow-blur: area.has-hover ? 10px : 4px;
+        drop-shadow-offset-x: 0;
+        drop-shadow-offset-y: 0;
+    }
+
+    // 霓虹 checkbox (空心方框, 选中=品红填充)
+    Rectangle {
+        x: 14px; y: (parent.height - Theme.checkbox-size) / 2;
+        width: Theme.checkbox-size; height: Theme.checkbox-size;
+        border-radius: 1px;
+        border-width: 1px;
+        border-color: root.selected
+            ? Theme.magenta-50
+            : area.has-hover ? Theme.cyan-50 : Theme.purple-line;
+        background: root.selected ? Theme.magenta-50 : transparent;
+        drop-shadow-color: root.selected
+            ? Theme.magenta-glow
+            : area.has-hover ? Theme.cyan-glow-soft : transparent;
+        drop-shadow-blur: 6px;
+        drop-shadow-offset-x: 0;
+        drop-shadow-offset-y: 0;
+
+        if root.selected : Rectangle {
+            x: (parent.width - 6px) / 2;
+            y: (parent.height - 6px) / 2;
+            width: 6px; height: 6px;
+            background: Theme.purple-bg-0;
+        }
+    }
+
+    // 版本号 (大号青色等宽)
+    Text {
+        x: 40px; y: 4px;
+        width: parent.width - 160px;
+        height: 20px;
+        text: root.version;
+        font-family: Theme.font-mono;
+        font-size: Theme.font-lg; font-weight: 700;
+        color: area.has-hover ? Theme.cyan-bright : Theme.cyan-50;
+        vertical-alignment: center;
+    }
+
+    // 路径 (次级灰紫色)
+    Text {
+        x: 40px; y: 23px;
+        width: parent.width - 160px;
+        height: 18px;
+        text: root.path;
+        font-family: Theme.font-mono;
+        font-size: Theme.font-xs;
+        color: Theme.text-faint;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+
+    // 状态徽章 (右侧, 半透明填充 + 边框 + 亮文字)
+    Rectangle {
+        x: parent.width - self.width - 12px;
+        y: (parent.height - self.height) / 2;
+        width: 88px; height: 22px;
+        border-width: 1px;
+        border-color: root.status-color;
+        border-radius: 2px;
+        background: root.status-color.with-alpha(0.15);
+        drop-shadow-color: root.status-color;
+        drop-shadow-blur: area.has-hover ? 8px : 4px;
+        drop-shadow-offset-x: 0;
+        drop-shadow-offset-y: 0;
+
+        Text {
+            width: 100%; height: 100%;
+            text: root.status-label;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-sm;
+            font-weight: 700;
+            color: root.status-color.brighter(0.3);
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

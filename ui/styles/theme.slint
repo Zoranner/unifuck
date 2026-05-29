@@ -1,0 +1,128 @@
+// Cyberpunk neon theme - 深紫黑底 + 青/品红双 accent
+export global Theme {
+    // === 新增霓虹色板 ===
+    // 背景: 深紫黑色调
+    out property <color> purple-bg-0: #0a0612;     // 最深, 窗口底
+    out property <color> purple-bg-1: #120a1f;     // 面板
+    out property <color> purple-bg-2: #1a0f2e;     // 抬升面板
+    out property <color> purple-bg-3: #241640;     // 控件底
+    out property <color> purple-bg-4: #2e1c52;     // hover
+    out property <color> purple-bg-5: #3a2566;     // active
+    out property <color> purple-line: #4a2d7a;     // 暗紫描边
+
+    // 青色 (cyan) - 主 accent
+    out property <color> cyan-50: #00f0ff;
+    out property <color> cyan-bright: #5cf7ff;
+    out property <color> cyan-dim: #00b8c8;
+    out property <color> cyan-deep: #007a85;
+    out property <color> cyan-glow: #00f0ff66;     // 40% 发光
+    out property <color> cyan-glow-soft: #00f0ff33;
+
+    // 品红 (magenta) - 次 accent
+    out property <color> magenta-50: #ff2e9a;
+    out property <color> magenta-bright: #ff66b8;
+    out property <color> magenta-dim: #c81a78;
+    out property <color> magenta-deep: #7a0f49;
+    out property <color> magenta-glow: #ff2e9a66;
+    out property <color> magenta-glow-soft: #ff2e9a33;
+
+    // 文字
+    out property <color> text-neon-cyan: cyan-bright;
+    out property <color> text-neon-magenta: magenta-bright;
+    out property <color> text-bright: #e8e0ff;
+    out property <color> text-dim: #9a8fc4;
+    out property <color> text-faint: #6b5d8f;
+
+    // 语义
+    out property <color> neon-success: cyan-50;
+    out property <color> neon-warning: #ffb347;
+    out property <color> neon-danger: magenta-50;
+
+    // 等宽字体
+    out property <string> font-mono: "Cascadia Mono, JetBrains Mono, Consolas, monospace";
+
+    // === 兼容旧 token (重新指向新色值, 保留名字给其他文件引用) ===
+    out property <color> neutral-0: purple-bg-0;
+    out property <color> neutral-50: purple-bg-1;
+    out property <color> neutral-100: purple-bg-2;
+    out property <color> neutral-150: purple-bg-3;
+    out property <color> neutral-200: purple-bg-4;
+    out property <color> neutral-300: purple-bg-5;
+    out property <color> neutral-400: purple-line;
+    out property <color> neutral-600: text-faint;
+    out property <color> neutral-700: text-dim;
+    out property <color> neutral-800: text-bright;
+    out property <color> neutral-900: #f5f0ff;
+
+    out property <color> surface-app: purple-bg-0;
+    out property <color> surface-panel: purple-bg-1;
+    out property <color> surface-raised: purple-bg-2;
+    out property <color> surface-control: purple-bg-3;
+    out property <color> surface-hover: purple-bg-4;
+    out property <color> surface-active: purple-bg-5;
+    out property <color> border-muted: purple-line;
+    out property <color> border-strong: cyan-dim;
+    out property <color> text-primary: text-bright;
+    out property <color> text-secondary: text-dim;
+    out property <color> text-muted: text-faint;
+    out property <color> accent: cyan-50;
+    out property <color> selection-bg: magenta-deep;
+    out property <color> selection-fg: text-bright;
+    out property <color> success: cyan-50;
+    out property <color> warning: neon-warning;
+    out property <color> danger: magenta-50;
+
+    out property <color> dialog-backdrop: #0a0612cc;
+    out property <color> dialog-surface: purple-bg-1;
+    out property <color> input-bg: purple-bg-3;
+    out property <color> input-bg-hover: purple-bg-4;
+    out property <color> input-bg-active: purple-bg-5;
+    out property <color> button-bg: purple-bg-3;
+    out property <color> button-bg-hover: purple-bg-4;
+    out property <color> button-bg-active: purple-bg-5;
+    out property <color> button-primary-bg: purple-bg-2;
+    out property <color> button-primary-bg-hover: purple-bg-3;
+    out property <color> button-primary-bg-active: purple-bg-4;
+    out property <color> button-warning-bg: #3a2516;
+    out property <color> button-warning-bg-hover: #4a311b;
+    out property <color> button-warning-bg-active: #5a3d20;
+    out property <color> button-danger-bg: #3a0f24;
+    out property <color> button-danger-bg-hover: #4a142e;
+    out property <color> button-danger-bg-active: #5a1939;
+    out property <color> list-item-hover-bg: purple-bg-2;
+    out property <color> list-item-selected-bg: purple-bg-3;
+
+    // 间距
+    out property <length> space-xxs: 4px;
+    out property <length> space-xs: 6px;
+    out property <length> space-sm: 8px;
+    out property <length> space-md: 12px;
+    out property <length> space-lg: 16px;
+    out property <length> space-xl: 18px;
+    out property <length> space-2xl: 24px;
+    out property <length> space-3xl: 28px;
+
+    // 圆角 (霓虹风格更锐, 整体降低)
+    out property <length> radius-sm: 2px;
+    out property <length> radius-md: 3px;
+    out property <length> radius-lg: 4px;
+    out property <length> radius-xl: 6px;
+
+    // 字号
+    out property <length> font-xs: 11px;
+    out property <length> font-sm: 12px;
+    out property <length> font-md: 13px;
+    out property <length> font-lg: 14px;
+    out property <length> font-xl: 16px;
+    out property <length> font-title: 18px;
+
+    out property <length> control-height: 30px;
+    out property <length> field-line-edit-height: control-height + font-lg + space-xxs + space-md;
+    out property <length> row-height: 42px;
+    out property <length> button-min-width: 88px;
+    out property <length> top-navigation-height: 30px;
+    out property <length> checkbox-size: 16px;
+    out property <length> checkbox-mark-size: 8px;
+    out property <length> dialog-width: 720px;
+    out property <length> dialog-height: 480px;
+}
