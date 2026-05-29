@@ -9,6 +9,9 @@ fn application_icon_is_wired_to_window_and_executable() {
 
     assert!(app_window.contains("icon: @image-url(\"assets/app-icon.png\");"));
     assert!(status_bar.contains("source: @image-url(\"../assets/app-icon.png\");"));
+    assert!(status_bar.contains("y: (parent.height - self.height) / 2;"));
+    assert!(status_bar.contains("border-color: Theme.cyan-50;"));
+    assert!(status_bar.contains("background: Theme.purple-bg-0;"));
     assert!(!status_bar.contains("🔓 UNIFUCK"));
     assert!(build_script.contains("EmbedResourcesKind::EmbedFiles"));
     assert!(build_script.contains("ui/assets/app-icon.ico"));

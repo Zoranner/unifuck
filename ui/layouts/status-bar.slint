@@ -36,10 +36,26 @@ export component HeaderBar inherits Rectangle {
         height: 100%;
         spacing: Theme.space-sm;
         alignment: start;
-        Image {
-            width: 18px;
-            height: 18px;
-            source: @image-url("../assets/app-icon.png");
+        Rectangle {
+            width: 22px;
+            height: 22px;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: Theme.cyan-50;
+            background: Theme.purple-bg-0;
+            drop-shadow-color: Theme.cyan-glow-soft;
+            drop-shadow-blur: 6px;
+            drop-shadow-offset-x: 0;
+            drop-shadow-offset-y: 0;
+
+            Image {
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                width: 16px;
+                height: 16px;
+                source: @image-url("../assets/app-icon.png");
+            }
         }
         Text {
             text: "UNIFUCK";
