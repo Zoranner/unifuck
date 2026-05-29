@@ -8,11 +8,22 @@ export component HeaderBar inherits Rectangle {
     callback drag-move;
 
     in property <string> version;
+    property <int> glitch-frame: 0;
+    property <bool> glitch-on: Math.mod(glitch-frame, 12) == 0 || Math.mod(glitch-frame, 19) == 0;
+    property <length> glitch-shift: glitch-on ? 2px : 0px;
 
     min-height: 30px;
     max-height: 30px;
     vertical-stretch: 0;
     background: Theme.purple-bg-0;
+
+    Timer {
+        interval: 95ms;
+        running: true;
+        triggered => {
+            root.glitch-frame = Math.mod(root.glitch-frame + 1, 120);
+        }
+    }
 
     // 拖动 TouchArea (排除右侧 72px 按钮区, 显式 30px 高度)
     drag-area := TouchArea {
@@ -28,6 +39,30 @@ export component HeaderBar inherits Rectangle {
         moved => {
             root.drag-move();
         }
+    }
+
+    Text {
+        x: Theme.space-md + 28px - root.glitch-shift;
+        y: 7px;
+        text: "UNIFUCK";
+        font-family: Theme.font-mono;
+        font-size: Theme.font-md;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: Theme.cyan-50;
+        opacity: root.glitch-on ? 0.55 : 0;
+    }
+
+    Text {
+        x: Theme.space-md + 28px + root.glitch-shift;
+        y: 7px;
+        text: "UNIFUCK";
+        font-family: Theme.font-mono;
+        font-size: Theme.font-md;
+        font-weight: 700;
+        letter-spacing: 1px;
+        color: Theme.magenta-50;
+        opacity: root.glitch-on ? 0.45 : 0;
     }
 
     // 标题
@@ -112,5 +147,14 @@ export component HeaderBar inherits Rectangle {
         drop-shadow-blur: 6px;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
+    }
+
+    Rectangle {
+        x: Math.mod(root.glitch-frame * 17, 360) * 1px;
+        y: parent.height - 2px;
+        width: root.glitch-on ? 58px : 22px;
+        height: 1px;
+        background: root.glitch-on ? Theme.magenta-50 : #ffd400;
+        opacity: root.glitch-on ? 0.9 : 0.35;
     }
 }
