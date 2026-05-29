@@ -30,8 +30,9 @@ fn header_drag_area_is_limited_to_title_region() {
     let drag_area = source.split("drag-area := TouchArea").nth(1).unwrap();
     let drag_area = drag_area.split("// 标题").next().unwrap();
 
-    assert!(source.contains("background: Theme.cyan-50;"));
-    assert!(source.contains("color: Theme.magenta-50;"));
+    assert!(source.contains("background: Theme.purple-bg-0;"));
+    assert!(source.contains("color: #ffd400;"));
+    assert!(source.contains("color: Theme.cyan-bright;"));
     assert!(source.contains("min-height: 30px;"));
     assert!(source.contains("max-height: 30px;"));
     assert!(source.contains("vertical-stretch: 0;"));
