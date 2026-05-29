@@ -8,6 +8,7 @@ fn application_icon_is_wired_to_window_and_executable() {
     let manifest = fs::read_to_string("Cargo.toml").unwrap();
 
     assert!(app_window.contains("icon: @image-url(\"assets/app-icon.png\");"));
+    assert!(app_window.contains("border-color: Theme.magenta-50;"));
     assert!(status_bar.contains("source: @image-url(\"../assets/app-icon.png\");"));
     assert!(status_bar.contains("y: (parent.height - self.height) / 2;"));
     assert!(status_bar.contains("width: 20px;"));
