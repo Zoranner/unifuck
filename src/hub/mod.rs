@@ -12,20 +12,10 @@ pub(crate) const HUB_ASAR_REL: &str = r"resources\app.asar";
 
 // ── HubInfo ────────────────────────────────────────────────────
 
+#[derive(Clone)]
 pub(crate) struct HubInfo {
-    pub hub_path: PathBuf,
     pub version: String,
     pub asar_path: PathBuf,
-}
-
-impl Clone for HubInfo {
-    fn clone(&self) -> Self {
-        Self {
-            hub_path: self.hub_path.clone(),
-            version: self.version.clone(),
-            asar_path: self.asar_path.clone(),
-        }
-    }
 }
 
 // ── Hub Detection ──────────────────────────────────────────────
@@ -58,7 +48,6 @@ pub(crate) fn find_hub() -> Option<HubInfo> {
 fn hub_info_from_path(hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
     let version = read_hub_version(hub_path, asar_path).unwrap_or_else(|| "unknown".to_string());
     Some(HubInfo {
-        hub_path: hub_path.to_path_buf(),
         version,
         asar_path: asar_path.to_path_buf(),
     })
@@ -176,7 +165,6 @@ pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
 
     // Detect version and get strategy
     let strategy = versions::detect_strategy(&asar)?;
-    println!("Detected Unity Hub {}", strategy.version_name());
 
     // Apply patches
     let modified = strategy.apply_patches(&asar)?;
@@ -184,8 +172,6 @@ pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
     if modified.is_empty() {
         anyhow::bail!("no patches applied for version {}", strategy.version_name());
     }
-
-    println!("Applied {} patch(es)", modified.len());
 
     // Write patched asar
     asar::write_asar(asar_path, &modified, &asar)?;

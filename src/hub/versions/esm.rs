@@ -46,15 +46,13 @@ impl PatchStrategy for EsmStrategy {
     }
 
     fn apply_patches(&self, asar: &AsarArchive) -> anyhow::Result<Vec<(String, Vec<u8>)>> {
-        let bundle_path = Self::find_app_bundle(asar)
-            .context("could not find app bundle in asar")?;
+        let bundle_path =
+            Self::find_app_bundle(asar).context("could not find app bundle in asar")?;
 
-        let entry = asar::find_entry(&asar.header_json, &bundle_path)
-            .context("bundle entry not found")?;
-        let content_bytes = asar::extract_file(asar, &entry)
-            .context("could not extract bundle")?;
-        let content = String::from_utf8(content_bytes)
-            .context("bundle is not valid UTF-8")?;
+        let entry =
+            asar::find_entry(&asar.header_json, &bundle_path).context("bundle entry not found")?;
+        let content_bytes = asar::extract_file(asar, &entry).context("could not extract bundle")?;
+        let content = String::from_utf8(content_bytes).context("bundle is not valid UTF-8")?;
 
         let patched = patch_bundled_app(&content)?;
         Ok(vec![(bundle_path, patched.into_bytes())])
@@ -121,8 +119,12 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
             createdAt: "2024-01-01T00:00:00.000Z",
         };
     }"#;
-    result = replace_fn_body(&result, "constructor(loggerFactory, windowActions, runtimePowerMonitor", new_constructor)
-        .context("patch constructor failed")?;
+    result = replace_fn_body(
+        &result,
+        "constructor(loggerFactory, windowActions, runtimePowerMonitor",
+        new_constructor,
+    )
+    .context("patch constructor failed")?;
 
     // 5. Patch restoreAuthState() — set loggedIn and broadcast events
     // In 3.18: uses mainContainer.get(IEventBroadcasterId).broadcast() and getChannel("app").publish()
@@ -166,33 +168,21 @@ mod tests {
     #[test]
     fn patch_is_license_valid() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "isLicenseValid(",
-            "{ return true; }",
-        );
+        let result = replace_fn_body(&content, "isLicenseValid(", "{ return true; }");
         assert!(result.is_some(), "should find isLicenseValid definition");
     }
 
     #[test]
     fn patch_is_user_signed_in() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "isUserSignedIn(",
-            "{ return true; }",
-        );
+        let result = replace_fn_body(&content, "isUserSignedIn(", "{ return true; }");
         assert!(result.is_some(), "should find isUserSignedIn definition");
     }
 
     #[test]
     fn patch_get_valid_entitlement_groups() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "getValidEntitlementGroups(",
-            "{ return []; }",
-        );
+        let result = replace_fn_body(&content, "getValidEntitlementGroups(", "{ return []; }");
         assert!(
             result.is_some(),
             "should find getValidEntitlementGroups definition"
@@ -202,33 +192,21 @@ mod tests {
     #[test]
     fn patch_constructor() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "constructor(loggerFactory",
-            "{ super(); }",
-        );
+        let result = replace_fn_body(&content, "constructor(loggerFactory", "{ super(); }");
         assert!(result.is_some(), "should find AuthService constructor");
     }
 
     #[test]
     fn patch_restore_auth_state() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "restoreAuthState(",
-            "{ /* noop */ }",
-        );
+        let result = replace_fn_body(&content, "restoreAuthState(", "{ /* noop */ }");
         assert!(result.is_some(), "should find restoreAuthState definition");
     }
 
     #[test]
     fn patch_get_instance() {
         let content = load_bundle();
-        let result = replace_fn_body(
-            &content,
-            "getInstance(",
-            "{ return null; }",
-        );
+        let result = replace_fn_body(&content, "getInstance(", "{ return null; }");
         assert!(result.is_some(), "should find getInstance definition");
     }
 
@@ -236,7 +214,11 @@ mod tests {
     fn full_patch_succeeds() {
         let content = load_bundle();
         let result = patch_bundled_app(&content);
-        assert!(result.is_ok(), "full patch should succeed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "full patch should succeed: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -255,7 +237,10 @@ mod tests {
         assert!(bundle.is_some(), "Should find app-*.js bundle");
 
         let bundle_name = bundle.unwrap();
-        assert!(bundle_name.starts_with("build/main/app-"), "Bundle path should start with build/main/app-");
+        assert!(
+            bundle_name.starts_with("build/main/app-"),
+            "Bundle path should start with build/main/app-"
+        );
         assert!(bundle_name.ends_with(".js"), "Bundle should be a .js file");
 
         eprintln!("✓ Found bundle: {}", bundle_name);

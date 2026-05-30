@@ -151,11 +151,11 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
             createdAt: '2024-01-01T00:00:00.000Z',
         };
     }"#;
-    let after_constructor =
-        match replace_fn_body(&after_signed_in, "constructor(", new_constructor) {
-            Some(s) => s,
-            None => after_signed_in,
-        };
+    let after_constructor = match replace_fn_body(&after_signed_in, "constructor(", new_constructor)
+    {
+        Some(s) => s,
+        None => after_signed_in,
+    };
 
     // 3. Replace restoreAuthState() — set loggedIn and broadcast events
     let new_restore = r#"{
