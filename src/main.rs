@@ -3,6 +3,7 @@
 mod c14n;
 mod core;
 mod gui;
+mod hub;
 
 use gui::app::{sync_ui, AppState};
 use slint::ComponentHandle;

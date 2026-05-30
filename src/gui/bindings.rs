@@ -1,5 +1,6 @@
 use crate::core;
 use crate::gui::app::{sync_ui, AppState};
+use crate::hub::{self, HubInfo};
 use slint::ComponentHandle;
 use std::cell::RefCell;
 use std::path::PathBuf;
@@ -19,32 +20,63 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             if app.running {
                 return;
             }
-            let i = idx as usize;
-            if i >= app.installs.len() {
-                return;
-            }
-            let row_patched = *app.patched.get(i).unwrap_or(&false);
-            let cur_sel = *app.selected.get(i).unwrap_or(&false);
 
-            if cur_sel {
-                // 取消选中
-                app.selected[i] = false;
-                if !app.selected.iter().any(|s| *s) {
-                    app.selection_mode = None;
+            let has_hub = app.hub_info.is_some();
+            let is_hub_row = has_hub && idx == 0;
+            // Hub 存在时 Editor 行从 UI index 1 开始, 映射到 installs index 0
+            let editor_idx = if has_hub {
+                idx as usize - 1
+            } else {
+                idx as usize
+            };
+
+            if is_hub_row {
+                let hub_patched = app.hub_patched;
+                if app.hub_selected {
+                    app.hub_selected = false;
+                    if !app.selected.iter().any(|s| *s) {
+                        app.selection_mode = None;
+                    }
+                } else {
+                    match app.selection_mode {
+                        None => {
+                            app.selection_mode = Some(hub_patched);
+                            app.hub_selected = true;
+                        }
+                        Some(m) if m == hub_patched => {
+                            app.hub_selected = true;
+                        }
+                        _ => return,
+                    }
                 }
             } else {
-                // 选中
-                match app.selection_mode {
-                    None => {
-                        app.selection_mode = Some(row_patched);
-                        app.selected[i] = true;
+                let i = editor_idx;
+                if i >= app.installs.len() {
+                    return;
+                }
+                let row_patched = *app.patched.get(i).unwrap_or(&false);
+                let cur_sel = *app.selected.get(i).unwrap_or(&false);
+
+                if cur_sel {
+                    // 取消选中
+                    app.selected[i] = false;
+                    if !app.selected.iter().any(|s| *s) && !app.hub_selected {
+                        app.selection_mode = None;
                     }
-                    Some(m) if m == row_patched => {
-                        app.selected[i] = true;
-                    }
-                    _ => {
-                        // 状态不匹配, 忽略
-                        return;
+                } else {
+                    // 选中
+                    match app.selection_mode {
+                        None => {
+                            app.selection_mode = Some(row_patched);
+                            app.selected[i] = true;
+                        }
+                        Some(m) if m == row_patched => {
+                            app.selected[i] = true;
+                        }
+                        _ => {
+                            // 状态不匹配, 忽略
+                            return;
+                        }
                     }
                 }
             }
@@ -70,6 +102,7 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             for s in app.selected.iter_mut() {
                 *s = false;
             }
+            app.hub_selected = false;
         }
         sync_ui(&win, &app);
         if just_finished {
@@ -111,7 +144,13 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             return;
         };
         // 准备数据
-        let (selected, mode, all_paths): (Vec<core::UnityInstall>, Option<bool>, Vec<PathBuf>) = {
+        let (selected, mode, all_paths, hub_info, hub_selected): (
+            Vec<core::UnityInstall>,
+            Option<bool>,
+            Vec<PathBuf>,
+            Option<HubInfo>,
+            bool,
+        ) = {
             let app = s.borrow();
             if app.running {
                 return;
@@ -127,9 +166,11 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 }
             }
             let all: Vec<PathBuf> = app.installs.iter().map(|i| i.dll_path.clone()).collect();
-            (sel, mode, all)
+            let hub = app.hub_info.clone();
+            let hub_sel = app.hub_selected;
+            (sel, mode, all, hub, hub_sel)
         };
-        if selected.is_empty() || mode.is_none() {
+        if (selected.is_empty() && !hub_selected) || mode.is_none() {
             return;
         }
         let is_unpatch = mode == Some(true);
@@ -148,15 +189,22 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
         sync_ui(&win, &s.borrow());
 
         if is_unpatch {
-            thread::spawn(move || run_unpatch(tx, selected, all_paths));
+            thread::spawn(move || run_unpatch(tx, selected, all_paths, hub_info, hub_selected));
         } else {
-            thread::spawn(move || run_patch(tx, selected));
+            thread::spawn(move || run_patch(tx, selected, hub_info, hub_selected));
         }
     });
 }
 
-fn run_patch(tx: mpsc::Sender<String>, selected: Vec<core::UnityInstall>) {
+fn run_patch(
+    tx: mpsc::Sender<String>,
+    selected: Vec<core::UnityInstall>,
+    hub_info: Option<HubInfo>,
+    hub_selected: bool,
+) {
     let mut ok = false;
+
+    // Editor DLL patching
     for inst in &selected {
         if core::is_patched(&inst.dll_path) {
             tx.send(format!("OK  {}  already patched, skipped", inst.version))
@@ -176,8 +224,32 @@ fn run_patch(tx: mpsc::Sender<String>, selected: Vec<core::UnityInstall>) {
             }
         }
     }
+
+    // Hub patching
+    if hub_selected {
+        if let Some(ref hub) = hub_info {
+            if hub::is_hub_patched(&hub.asar_path) {
+                tx.send(format!("OK  Hub {}  already patched, skipped", hub.version))
+                    .ok();
+                ok = true;
+            } else {
+                tx.send(format!("..  Hub {}  patching...", hub.version))
+                    .ok();
+                match hub::patch_hub(hub) {
+                    Ok(()) => {
+                        tx.send(format!("OK  Hub {}  success", hub.version)).ok();
+                        ok = true;
+                    }
+                    Err(e) => {
+                        tx.send(format!("ERR Hub {}: {}", hub.version, e)).ok();
+                    }
+                }
+            }
+        }
+    }
+
     if !ok {
-        tx.send("ERR no version patched successfully".into()).ok();
+        tx.send("ERR no target patched successfully".into()).ok();
     } else {
         tx.send("..  generating license...".into()).ok();
         match core::sign_license() {
@@ -211,8 +283,12 @@ fn run_unpatch(
     tx: mpsc::Sender<String>,
     selected: Vec<core::UnityInstall>,
     all_paths: Vec<PathBuf>,
+    hub_info: Option<HubInfo>,
+    hub_selected: bool,
 ) {
     let mut ok = false;
+
+    // Editor DLL unpatching
     for inst in &selected {
         tx.send(format!("..  {}  un-patching...", inst.version))
             .ok();
@@ -226,13 +302,35 @@ fn run_unpatch(
             }
         }
     }
+
+    // Hub unpatching
+    if hub_selected {
+        if let Some(ref hub) = hub_info {
+            tx.send(format!("..  Hub {}  un-patching...", hub.version))
+                .ok();
+            match hub::unpatch_hub(hub) {
+                Ok(()) => {
+                    tx.send(format!("OK  Hub {}  restored", hub.version)).ok();
+                    ok = true;
+                }
+                Err(e) => {
+                    tx.send(format!("ERR Hub {}: {}", hub.version, e)).ok();
+                }
+            }
+        }
+    }
+
     if !ok {
-        tx.send("ERR no version un-patched successfully".into())
-            .ok();
+        tx.send("ERR no target un-patched successfully".into()).ok();
     } else {
         // 检查是否还有任意 install 仍处于 patched 状态
-        let any_left = all_paths.iter().any(|p| core::is_patched(p));
-        if !any_left {
+        let any_editor_left = all_paths.iter().any(|p| core::is_patched(p));
+        let any_hub_left = hub_info
+            .as_ref()
+            .map(|h| hub::is_hub_patched(&h.asar_path))
+            .unwrap_or(false);
+
+        if !any_editor_left && !any_hub_left {
             tx.send("..  removing license...".into()).ok();
             match core::remove_license() {
                 Ok(()) => {
@@ -253,7 +351,7 @@ fn run_unpatch(
                 }
             }
         } else {
-            tx.send("OK  other patched editors remain, keeping license and hosts".into())
+            tx.send("OK  other patched targets remain, keeping license and hosts".into())
                 .ok();
         }
         tx.send("OK  un-patch complete".into()).ok();

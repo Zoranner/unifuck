@@ -11,9 +11,11 @@ base64 = "0.22"
 pem = "3"
 anyhow = "1"
 slint = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+sha2 = "0.10"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging"] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry"] }
 
 [build-dependencies]
 slint-build = "1"
