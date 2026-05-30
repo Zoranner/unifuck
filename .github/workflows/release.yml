@@ -53,9 +53,9 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-2025-vs2026
             binary: unifuck.exe
-            asset: unifuck-x86_64-pc-windows-msvc.exe
+            archive: unifuck-x86_64-pc-windows-msvc.zip
             artifact_paths: |
-              unifuck-x86_64-pc-windows-msvc.exe
+              unifuck-x86_64-pc-windows-msvc.zip
           # Linux x86_64 packaging is parked until the project has a confirmed
           # Linux desktop packaging path.
           # - target: x86_64-unknown-linux-gnu
@@ -98,7 +98,7 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }} --package unifuck
 
-      - name: Prepare Windows executable asset
+      - name: Prepare Windows executable archive
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
@@ -107,7 +107,7 @@ jobs:
           if (!(Test-Path $binaryPath)) {
             throw "release binary was not found: $binaryPath"
           }
-          Copy-Item -Path $binaryPath -Destination ${{ matrix.asset }}
+          Compress-Archive -Path $binaryPath -DestinationPath ${{ matrix.archive }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -139,4 +139,4 @@ jobs:
           prerelease: false
           generate_release_notes: true
           files: |
-            artifacts/unifuck-x86_64-pc-windows-msvc/unifuck-x86_64-pc-windows-msvc.exe
+            artifacts/unifuck-x86_64-pc-windows-msvc/unifuck-x86_64-pc-windows-msvc.zip
