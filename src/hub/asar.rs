@@ -98,19 +98,28 @@ pub(crate) fn write_asar(
     let json_str = serde_json::to_string(&new_header)?;
     let json_bytes = json_str.as_bytes();
     let json_len = json_bytes.len();
-    let inner_payload_size = (4 + json_len) as u32;
+    let inner_payload_size = align4(4 + json_len) as u32;
     let outer_payload_size = 4 + inner_payload_size;
 
-    let mut output = Vec::with_capacity(16 + json_len + new_data.len());
+    let mut header_buf = Vec::with_capacity(inner_payload_size as usize);
+    header_buf.extend_from_slice(&inner_payload_size.to_le_bytes());
+    header_buf.extend_from_slice(&(json_len as u32).to_le_bytes());
+    header_buf.extend_from_slice(json_bytes);
+    header_buf.resize(outer_payload_size as usize, 0);
+
+    let mut output = Vec::with_capacity(8 + header_buf.len() + new_data.len());
     output.extend_from_slice(&4u32.to_le_bytes());
     output.extend_from_slice(&outer_payload_size.to_le_bytes());
-    output.extend_from_slice(&inner_payload_size.to_le_bytes());
-    output.extend_from_slice(&(json_len as u32).to_le_bytes());
-    output.extend_from_slice(json_bytes);
+    output.extend_from_slice(&header_buf);
     output.extend_from_slice(&new_data);
 
     std::fs::write(path, &output).with_context(|| format!("write asar: {}", path.display()))?;
     Ok(())
+}
+
+#[inline]
+fn align4(n: usize) -> usize {
+    (n + 3) & !3
 }
 
 fn walk_asar(header: &Value) -> Vec<(String, Value)> {
@@ -183,4 +192,82 @@ fn compute_integrity(data: &[u8]) -> Value {
         "blockSize": BLOCK_SIZE,
         "blocks": blocks,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture_archive() -> AsarArchive {
+        let main_js = b"old main";
+        let package_json = br#"{"version":"1.0.0"}"#;
+        let mut data = Vec::new();
+        data.extend_from_slice(main_js);
+        data.extend_from_slice(package_json);
+
+        AsarArchive {
+            header_json: json!({
+                "files": {
+                    "build": {
+                        "files": {
+                            "main": {
+                                "files": {
+                                    "app-test.js": {
+                                        "size": main_js.len(),
+                                        "offset": "0",
+                                        "integrity": {}
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    "package.json": {
+                        "size": package_json.len(),
+                        "offset": main_js.len().to_string(),
+                        "integrity": {}
+                    }
+                }
+            }),
+            data,
+        }
+    }
+
+    #[test]
+    fn write_asar_aligns_header_and_roundtrips_modified_files() {
+        let archive = fixture_archive();
+        let path = std::env::temp_dir().join(format!(
+            "unifuck-asar-roundtrip-{}.asar",
+            std::process::id()
+        ));
+
+        write_asar(
+            &path,
+            &[(
+                "build/main/app-test.js".to_string(),
+                b"patched main".to_vec(),
+            )],
+            &archive,
+        )
+        .unwrap();
+
+        let bytes = std::fs::read(&path).unwrap();
+        let header_payload_size = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
+        let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        assert_eq!(header_payload_size, align4(4 + json_len));
+
+        let roundtripped = read_asar(&path).unwrap();
+        let entry = find_entry(&roundtripped.header_json, "build/main/app-test.js").unwrap();
+        assert_eq!(
+            extract_file(&roundtripped, &entry).unwrap(),
+            b"patched main"
+        );
+
+        let entry = find_entry(&roundtripped.header_json, "package.json").unwrap();
+        assert_eq!(
+            extract_file(&roundtripped, &entry).unwrap(),
+            br#"{"version":"1.0.0"}"#
+        );
+
+        std::fs::remove_file(path).ok();
+    }
 }

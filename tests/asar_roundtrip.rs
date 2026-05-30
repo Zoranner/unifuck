@@ -1,77 +1,107 @@
-use std::path::Path;
+#[path = "../src/hub/asar.rs"]
+mod asar;
+
+use serde_json::json;
 
 #[inline]
 fn align4(n: usize) -> usize {
     (n + 3) & !3
 }
 
-#[test]
-fn asar_roundtrip_read_write() {
-    let bak_path = r"C:\Program Files\Unity Hub\resources\app.asar.bak";
-    if !Path::new(bak_path).exists() {
-        eprintln!("SKIP: no asar.bak found");
-        return;
-    }
-    let bytes = std::fs::read(bak_path).unwrap();
+fn fixture_archive() -> asar::AsarArchive {
+    let app_js = b"console.log('old');";
+    let package_json = br#"{"version":"1.0.0"}"#;
+    let nested = b"nested file";
 
-    // Read
+    let mut data = Vec::new();
+    let app_offset = data.len();
+    data.extend_from_slice(app_js);
+    let package_offset = data.len();
+    data.extend_from_slice(package_json);
+    let nested_offset = data.len();
+    data.extend_from_slice(nested);
+
+    asar::AsarArchive {
+        header_json: json!({
+            "files": {
+                "build": {
+                    "files": {
+                        "main": {
+                            "files": {
+                                "app-test.js": {
+                                    "size": app_js.len(),
+                                    "offset": app_offset.to_string(),
+                                    "integrity": {}
+                                }
+                            }
+                        }
+                    }
+                },
+                "package.json": {
+                    "size": package_json.len(),
+                    "offset": package_offset.to_string(),
+                    "integrity": {}
+                },
+                "nested": {
+                    "files": {
+                        "fixture.txt": {
+                            "size": nested.len(),
+                            "offset": nested_offset.to_string(),
+                            "integrity": {}
+                        }
+                    }
+                }
+            }
+        }),
+        data,
+    }
+}
+
+#[test]
+fn asar_roundtrip_read_write_uses_self_contained_fixture() {
+    let archive = fixture_archive();
+    let path = std::env::temp_dir().join(format!(
+        "unifuck-asar-integration-{}.asar",
+        std::process::id()
+    ));
+
+    asar::write_asar(
+        &path,
+        &[(
+            "build/main/app-test.js".to_string(),
+            b"console.log('patched');".to_vec(),
+        )],
+        &archive,
+    )
+    .unwrap();
+
+    let bytes = std::fs::read(&path).unwrap();
+    assert_eq!(u32::from_le_bytes(bytes[0..4].try_into().unwrap()), 4);
+
     let header_buf_size = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
     let payload_size = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
     let json_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    assert_eq!(payload_size, align4(4 + json_len));
+    assert_eq!(header_buf_size, 4 + payload_size);
 
-    // Verify format
+    let roundtripped = asar::read_asar(&path).unwrap();
+    let app_entry = asar::find_entry(&roundtripped.header_json, "build/main/app-test.js").unwrap();
     assert_eq!(
-        u32::from_le_bytes(bytes[0..4].try_into().unwrap()),
-        4,
-        "size pickle payload"
+        asar::extract_file(&roundtripped, &app_entry).unwrap(),
+        b"console.log('patched');"
     );
+
+    let package_entry = asar::find_entry(&roundtripped.header_json, "package.json").unwrap();
     assert_eq!(
-        payload_size,
-        align4(4 + json_len),
-        "payload_size = align4(4 + json_len)"
+        asar::extract_file(&roundtripped, &package_entry).unwrap(),
+        br#"{"version":"1.0.0"}"#
     );
 
-    let json_str = std::str::from_utf8(&bytes[16..16 + json_len]).unwrap();
-    let header: serde_json::Value = serde_json::from_str(json_str).unwrap();
-    let data = bytes[8 + header_buf_size..].to_vec();
-
-    // Write back (unmodified)
-    let new_json = serde_json::to_string(&header).unwrap();
-    let new_json_bytes = new_json.as_bytes();
-    let new_json_len = new_json_bytes.len();
-    let new_payload_size = align4(4 + new_json_len) as u32;
-
-    let mut header_buf = Vec::new();
-    header_buf.extend_from_slice(&new_payload_size.to_le_bytes());
-    header_buf.extend_from_slice(&(new_json_len as u32).to_le_bytes());
-    header_buf.extend_from_slice(new_json_bytes);
-    header_buf.resize(4 + new_payload_size as usize, 0);
-
-    let new_header_buf_size = header_buf.len() as u32;
-    let mut output = Vec::new();
-    output.extend_from_slice(&4u32.to_le_bytes());
-    output.extend_from_slice(&new_header_buf_size.to_le_bytes());
-    output.extend_from_slice(&header_buf);
-    output.extend_from_slice(&data);
-
-    let out_path = std::env::temp_dir().join("test_roundtrip.asar");
-    let out_path_str = out_path.to_str().unwrap();
-    std::fs::write(out_path_str, &output).unwrap();
-
-    // Verify npx asar can parse it
-    let npx_cmd = if cfg!(windows) { "npx.cmd" } else { "npx" };
-    let result = std::process::Command::new(npx_cmd)
-        .args(["asar", "list", out_path_str])
-        .output()
-        .unwrap();
-
-    assert!(
-        result.status.success(),
-        "npx asar list failed: {}",
-        String::from_utf8_lossy(&result.stderr)
+    let nested_entry = asar::find_entry(&roundtripped.header_json, "nested/fixture.txt").unwrap();
+    assert_eq!(
+        asar::extract_file(&roundtripped, &nested_entry).unwrap(),
+        b"nested file"
     );
 
-    let file_count = String::from_utf8_lossy(&result.stdout).lines().count();
-    assert!(file_count > 100, "expected many files, got {}", file_count);
-    eprintln!("OK: roundtrip produced {} files", file_count);
+    std::fs::remove_file(path).ok();
 }
