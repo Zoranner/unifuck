@@ -4,6 +4,7 @@ fn main() {
         .embed_resources(slint_build::EmbedResourcesKind::EmbedFiles);
     slint_build::compile_with_config("ui/app-window.slint", config).unwrap();
 
+    // Only embed admin manifest for release builds, not tests
     #[cfg(windows)]
     {
         use embed_manifest::manifest::ExecutionLevel;
@@ -15,11 +16,15 @@ fn main() {
                 .compile()
                 .expect("embed windows icon");
 
-            embed_manifest(
-                new_manifest("unifuck")
-                    .requested_execution_level(ExecutionLevel::RequireAdministrator),
-            )
-            .expect("embed manifest");
+            // Only embed manifest for release builds to allow running tests without admin
+            let profile = std::env::var("PROFILE").unwrap_or_default();
+            if profile == "release" {
+                embed_manifest(
+                    new_manifest("unifuck")
+                        .requested_execution_level(ExecutionLevel::RequireAdministrator),
+                )
+                .expect("embed manifest");
+            }
         }
     }
 }
