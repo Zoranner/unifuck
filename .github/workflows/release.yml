@@ -1,0 +1,142 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: Tests & Checks
+    runs-on: windows-2025-vs2026
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check code formatting
+        run: cargo fmt --all -- --check
+
+      - name: Run Clippy checks
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Run tests
+        run: cargo test --all-targets --all-features
+
+  build-release:
+    name: Build Release Binary (${{ matrix.target }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            os: windows-2025-vs2026
+            binary: unifuck.exe
+            archive: unifuck-x86_64-pc-windows-msvc.zip
+            artifact_paths: |
+              unifuck-x86_64-pc-windows-msvc.zip
+          # Linux x86_64 packaging is parked until the project has a confirmed
+          # Linux desktop packaging path.
+          # - target: x86_64-unknown-linux-gnu
+          #   os: ubuntu-latest
+          #   binary: unifuck
+          #   archive: unifuck-x86_64-unknown-linux-gnu.tar.gz
+          #   artifact_paths: |
+          #     unifuck-x86_64-unknown-linux-gnu.tar.gz
+          # macOS x86_64 packaging is parked until the project has a confirmed
+          # macOS desktop packaging path.
+          # - target: x86_64-apple-darwin
+          #   os: macos-latest
+          #   binary: unifuck
+          #   archive: unifuck-x86_64-apple-darwin.tar.gz
+          #   artifact_paths: |
+          #     unifuck-x86_64-apple-darwin.tar.gz
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-${{ matrix.target }}-release-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-release-cargo-
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }} --package unifuck
+
+      - name: Prepare Windows executable archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $releaseDir = "target/${{ matrix.target }}/release"
+          $binaryPath = "$releaseDir/${{ matrix.binary }}"
+          if (!(Test-Path $binaryPath)) {
+            throw "release binary was not found: $binaryPath"
+          }
+          Compress-Archive -Path $binaryPath -DestinationPath ${{ matrix.archive }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: unifuck-${{ matrix.target }}
+          path: ${{ matrix.artifact_paths }}
+          if-no-files-found: error
+
+  create-release:
+    name: Create GitHub Release
+    needs: build-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Display artifact structure
+        run: ls -R artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            artifacts/unifuck-x86_64-pc-windows-msvc/unifuck-x86_64-pc-windows-msvc.zip
