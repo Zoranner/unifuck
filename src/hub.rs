@@ -347,7 +347,7 @@ fn write_asar(
     let mut output = Vec::with_capacity(16 + json_len + new_data.len());
     output.extend_from_slice(&4u32.to_le_bytes());
     output.extend_from_slice(&outer_payload_size.to_le_bytes());
-    output.extend_from_slice(&1u32.to_le_bytes());
+    output.extend_from_slice(&inner_payload_size.to_le_bytes());
     output.extend_from_slice(&(json_len as u32).to_le_bytes());
     output.extend_from_slice(json_bytes);
     output.extend_from_slice(&new_data);
@@ -529,10 +529,10 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
 }
 
 fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
+    // 1. 替换 isUserSignedIn() → return true
     let new_signed_in = r#"{
         return true;
     }"#;
-
     let after_signed_in = match replace_fn_body(content, "isUserSignedIn(", new_signed_in) {
         Some(s) => s,
         None => {
@@ -541,15 +541,73 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
         }
     };
 
+    // 2. 替换 constructor() — 注入假 userInfo，使 getFormattedUserInfo() 返回有效用户
+    let new_constructor = r#"{
+        super();
+        this.userInfo = undefined;
+        this.tokenRefreshAttemptCount = -1;
+        this.codeVerifier = '';
+        this.authLogger = (0, logger_1.default)('Authentication Service');
+        this.connectInfo = {
+            error: false,
+            initialized: false,
+            loggedIn: false,
+            maintenance: false,
+            online: true,
+            ready: false,
+            showLoginWindow: false,
+            workOffline: false,
+        };
+        this.tokenRefreshTimer = null;
+        this.userInfoRefreshTimer = null;
+        this.userInfo = {
+            identifier: 'unifuck-bypass',
+            foreignKey: 'unifuck-fk',
+            name: 'Unifuck',
+            email: 'bypass@local',
+            primaryOrg: 'local',
+            createdAt: '2024-01-01T00:00:00.000Z',
+        };
+    }"#;
+    let after_constructor =
+        match replace_fn_body(&after_signed_in, "constructor(", new_constructor) {
+            Some(s) => s,
+            None => after_signed_in,
+        };
+
+    // 3. 替换 restoreAuthState() — 设置 loggedIn 并广播事件，让 renderer 显示主界面
+    //    注意：windowManager 在 authService.init() 之后才初始化，必须加 null 保护
+    //    事件数据格式必须与 setOfflineLoggedInFlags/setLoggedInFlags 一致
     let new_restore = r#"{
         return __awaiter(this, void 0, void 0, function* () {
-            // Skip auth restoration
+            this.connectInfo.ready = true;
+            this.connectInfo.loggedIn = true;
+            this.connectInfo.initialized = true;
+            this.connectInfo.workOffline = true;
+            this.connectInfo.online = false;
+            this.userOrgs = null;
+            if (windowManager_1 && windowManager_1.default) {
+                windowManager_1.default.broadcastContent(PostalTopic_1.default.CONNECT_INFO_CHANGED, this.connectInfo);
+            }
+            postal_1.default.publish({
+                channel: 'app',
+                topic: PostalTopic_1.default.CONNECT_INFO_CHANGED,
+                data: { connectInfo: this.connectInfo },
+            });
+            postal_1.default.publish({
+                channel: 'app',
+                topic: PostalTopic_1.default.USER_INFO_CHANGED,
+                data: { userInfo: this.getFormattedUserInfo() },
+            });
+            postal_1.default.publish({
+                channel: 'fsm.user',
+                topic: PostalTopic_1.default.LOGGED_IN,
+            });
         });
     }"#;
-
-    match replace_fn_body(&after_signed_in, "restoreAuthState(", new_restore) {
+    match replace_fn_body(&after_constructor, "restoreAuthState(", new_restore) {
         Some(s) => Ok(s),
-        None => Ok(after_signed_in),
+        None => Ok(after_constructor),
     }
 }
 
