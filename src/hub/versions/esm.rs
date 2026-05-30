@@ -159,10 +159,45 @@ mod tests {
     use super::*;
 
     fn load_bundle() -> String {
-        std::fs::read_to_string(
-            r"C:\Users\Zoranner\AppData\Local\Temp\hub-new\build\main\app-BHPhhbiz.js",
-        )
-        .expect("extracted 3.18 bundle must exist")
+        r#"
+class AuthService extends BaseAuthService {
+    constructor(loggerFactory, windowActions, runtimePowerMonitor, gitCredentialManager, tokenManager) {
+        super();
+        this.#logger = loggerFactory.createLogger("AuthService");
+        this.#windowActions = windowActions;
+        this.#runtimePowerMonitor = runtimePowerMonitor;
+        this.#gitCredentialManager = gitCredentialManager;
+        this.#tokenManager = tokenManager;
+        this.connectInfo = {};
+        this.userInfo = null;
+    }
+
+    isLicenseValid() {
+        return Boolean(this.license);
+    }
+
+    isUserSignedIn() {
+        return Boolean(this.userInfo?.foreignKey);
+    }
+
+    getValidEntitlementGroups() {
+        return this.entitlementGroups.filter((group) => group.valid);
+    }
+
+    restoreAuthState() {
+        this.connectInfo.ready = false;
+        mainContainer.get(IEventBroadcasterId).broadcast(POSTAL_TOPICS.CONNECT_INFO_CHANGED, this.connectInfo);
+        getChannel("app").publish(POSTAL_TOPICS.CONNECT_INFO_CHANGED, { connectInfo: this.connectInfo });
+    }
+}
+
+class LicensingSdk {
+    getInstance() {
+        return this.instance;
+    }
+}
+"#
+        .to_string()
     }
 
     #[test]
