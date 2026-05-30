@@ -106,6 +106,7 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
         }
         sync_ui(&win, &app);
         if just_finished {
+            let total = app.success_count + app.error_count;
             let ok = app.error_count == 0;
             let partial = app.success_count > 0 && app.error_count > 0;
             let is_unpatch = app.last_op_unpatch;
@@ -114,29 +115,31 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 // 全部成功
                 if is_unpatch {
                     if app.cleaned_globals {
-                        format!(
-                            "{} target(s) restored, license and hosts cleaned up.",
-                            app.success_count
-                        )
-                        .into()
+                        format!("{} restored, license and hosts cleaned up.", total).into()
                     } else {
                         format!(
-                            "{} target(s) restored. License and hosts kept (other targets still patched).",
-                            app.success_count
+                            "{} restored. License and hosts kept (other targets still patched).",
+                            total
                         )
                         .into()
                     }
                 } else {
-                    format!("{} target(s) patched, license deployed.", app.success_count).into()
+                    format!("{} patched, license deployed.", total).into()
                 }
             } else if partial {
                 // 部分成功
-                let summary = format!("{} succeeded, {} failed", app.success_count, app.error_count);
+                let summary = format!(
+                    "{} selected, {} succeeded, {} failed",
+                    total, app.success_count, app.error_count
+                );
                 let err_info = truncate_error(&app.first_error, 40);
                 format!("{}\n{}", summary, err_info).into()
             } else {
                 // 全部失败
-                let summary = format!("0 succeeded, {} failed", app.error_count);
+                let summary = format!(
+                    "{} selected, 0 succeeded, {} failed",
+                    total, app.error_count
+                );
                 let err_info = truncate_error(&app.first_error, 40);
                 format!("{}\n{}", summary, err_info).into()
             };
@@ -163,9 +166,11 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             return;
         };
         // 准备数据
-        let (selected, mode, all_paths, hub_info, hub_selected): (
+        #[allow(clippy::type_complexity)]
+        let (selected, mode, all_paths, all_exe_paths, hub_info, hub_selected): (
             Vec<core::UnityInstall>,
             Option<bool>,
+            Vec<PathBuf>,
             Vec<PathBuf>,
             Option<HubInfo>,
             bool,
@@ -185,9 +190,10 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 }
             }
             let all: Vec<PathBuf> = app.installs.iter().map(|i| i.dll_path.clone()).collect();
+            let all_exe: Vec<PathBuf> = app.installs.iter().map(|i| i.exe_path.clone()).collect();
             let hub = app.hub_info.clone();
             let hub_sel = app.hub_selected;
-            (sel, mode, all, hub, hub_sel)
+            (sel, mode, all, all_exe, hub, hub_sel)
         };
         if (selected.is_empty() && !hub_selected) || mode.is_none() {
             return;
@@ -209,7 +215,16 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
         sync_ui(&win, &s.borrow());
 
         if is_unpatch {
-            thread::spawn(move || run_unpatch(tx, selected, all_paths, hub_info, hub_selected));
+            thread::spawn(move || {
+                run_unpatch(
+                    tx,
+                    selected,
+                    all_paths,
+                    all_exe_paths,
+                    hub_info,
+                    hub_selected,
+                );
+            });
         } else {
             thread::spawn(move || run_patch(tx, selected, hub_info, hub_selected));
         }
@@ -224,10 +239,10 @@ fn run_patch(
 ) {
     let mut ok = false;
 
-    // Editor DLL patching
+    // Editor DLL + exe patching
     for inst in &selected {
         if core::is_patched(&inst.dll_path) {
-            tx.send(format!("OK  {}  already patched, skipped", inst.version))
+            tx.send(format!("TOK  {}  already patched, skipped", inst.version))
                 .ok();
             ok = true;
             continue;
@@ -236,12 +251,48 @@ fn run_patch(
             .ok();
         match core::patch_dll(&inst.dll_path) {
             Ok(()) => {
-                tx.send(format!("OK  {}  success", inst.version)).ok();
+                tx.send(format!("TOK  {}  DLL patched", inst.version)).ok();
+                // 同时补丁 exe (仅对 Unity 2021 等单体二进制生效)
+                tx.send(format!("..  {}  patching exe...", inst.version))
+                    .ok();
+                match core::patch_exe(&inst.exe_path) {
+                    Ok(()) => {
+                        if core::is_exe_patched(&inst.exe_path) {
+                            tx.send(format!("..  {}  exe patched", inst.version)).ok();
+                        } else {
+                            tx.send(format!("..  {}  exe skipped (no cert)", inst.version))
+                                .ok();
+                        }
+                    }
+                    Err(e) => {
+                        tx.send(format!("..  {}  exe patch failed: {}", inst.version, e))
+                            .ok();
+                    }
+                }
                 ok = true;
             }
             Err(e) => {
-                tx.send(format!("ERR {}  failed: {}", inst.version, e)).ok();
+                tx.send(format!("TERR {}  failed: {}", inst.version, e))
+                    .ok();
             }
+        }
+    }
+
+    // Shared Licensing Client (Hub-installed, used by 2021 Editors via IPC)
+    tx.send("..  patching shared licensing client...".into())
+        .ok();
+    match core::patch_shared_licensing_client() {
+        Ok(()) => {
+            if core::is_shared_licensing_client_patched() {
+                tx.send("OK  shared licensing client patched".into()).ok();
+            } else {
+                tx.send("..  shared licensing client skipped (not found)".into())
+                    .ok();
+            }
+        }
+        Err(e) => {
+            tx.send(format!("..  shared licensing client failed: {}", e))
+                .ok();
         }
     }
 
@@ -249,19 +300,22 @@ fn run_patch(
     if hub_selected {
         if let Some(ref hub) = hub_info {
             if hub::is_hub_patched(&hub.asar_path) {
-                tx.send(format!("OK  Hub {}  already patched, skipped", hub.version))
-                    .ok();
+                tx.send(format!(
+                    "TOK  Hub {}  already patched, skipped",
+                    hub.version
+                ))
+                .ok();
                 ok = true;
             } else {
                 tx.send(format!("..  Hub {}  patching...", hub.version))
                     .ok();
                 match hub::patch_hub(hub) {
                     Ok(()) => {
-                        tx.send(format!("OK  Hub {}  success", hub.version)).ok();
+                        tx.send(format!("TOK  Hub {}  success", hub.version)).ok();
                         ok = true;
                     }
                     Err(e) => {
-                        tx.send(format!("ERR Hub {}: {}", hub.version, e)).ok();
+                        tx.send(format!("TERR Hub {}: {}", hub.version, e)).ok();
                     }
                 }
             }
@@ -303,23 +357,49 @@ fn run_unpatch(
     tx: mpsc::Sender<String>,
     selected: Vec<core::UnityInstall>,
     all_paths: Vec<PathBuf>,
+    all_exe_paths: Vec<PathBuf>,
     hub_info: Option<HubInfo>,
     hub_selected: bool,
 ) {
     let mut ok = false;
 
-    // Editor DLL unpatching
+    // Editor DLL + exe unpatching
     for inst in &selected {
         tx.send(format!("..  {}  un-patching...", inst.version))
             .ok();
         match core::unpatch_dll(&inst.dll_path) {
             Ok(()) => {
-                tx.send(format!("OK  {}  restored", inst.version)).ok();
+                tx.send(format!("TOK  {}  DLL restored", inst.version)).ok();
+                // 同时还原 exe (若从未补丁过则静默跳过)
+                match core::unpatch_exe(&inst.exe_path) {
+                    Ok(()) => {
+                        tx.send(format!("..  {}  exe restored/skipped", inst.version))
+                            .ok();
+                    }
+                    Err(e) => {
+                        tx.send(format!("..  {}  exe restore failed: {}", inst.version, e))
+                            .ok();
+                    }
+                }
                 ok = true;
             }
             Err(e) => {
-                tx.send(format!("ERR {}  failed: {}", inst.version, e)).ok();
+                tx.send(format!("TERR {}  failed: {}", inst.version, e))
+                    .ok();
             }
+        }
+    }
+
+    // Shared Licensing Client
+    tx.send("..  un-patching shared licensing client...".into())
+        .ok();
+    match core::unpatch_shared_licensing_client() {
+        Ok(()) => {
+            tx.send("OK  shared licensing client restored".into()).ok();
+        }
+        Err(e) => {
+            tx.send(format!("..  shared licensing client restore failed: {}", e))
+                .ok();
         }
     }
 
@@ -330,11 +410,11 @@ fn run_unpatch(
                 .ok();
             match hub::unpatch_hub(hub) {
                 Ok(()) => {
-                    tx.send(format!("OK  Hub {}  restored", hub.version)).ok();
+                    tx.send(format!("TOK  Hub {}  restored", hub.version)).ok();
                     ok = true;
                 }
                 Err(e) => {
-                    tx.send(format!("ERR Hub {}: {}", hub.version, e)).ok();
+                    tx.send(format!("TERR Hub {}: {}", hub.version, e)).ok();
                 }
             }
         }
@@ -344,7 +424,9 @@ fn run_unpatch(
         tx.send("ERR no target un-patched successfully".into()).ok();
     } else {
         // 检查是否还有任意 install 仍处于 patched 状态
-        let any_editor_left = all_paths.iter().any(|p| core::is_patched(p));
+        let any_editor_left = all_paths.iter().any(|p| core::is_patched(p))
+            || all_exe_paths.iter().any(|p| core::is_exe_patched(p))
+            || core::is_shared_licensing_client_patched();
         let any_hub_left = hub_info
             .as_ref()
             .map(|h| hub::is_hub_patched(&h.asar_path))

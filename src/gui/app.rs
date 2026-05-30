@@ -120,13 +120,13 @@ impl AppState {
                 updated = true;
                 if msg.is_empty() {
                     done = true;
-                } else if msg.starts_with("OK") {
+                } else if msg.starts_with("TOK") {
                     self.success_count += 1;
-                } else if msg.starts_with("ERR") {
+                } else if msg.starts_with("TERR") {
                     self.error_count += 1;
                     if self.first_error.is_empty() {
                         self.first_error =
-                            msg.strip_prefix("ERR").unwrap_or(&msg).trim().to_string();
+                            msg.strip_prefix("TERR").unwrap_or(&msg).trim().to_string();
                     }
                 } else if let Some(rest) = msg.strip_prefix("META ") {
                     // 线程内传递的元数据 (非用户可见日志)
