@@ -18,8 +18,9 @@ impl EsmStrategy {
     /// Find the bundled app file in the asar archive.
     fn find_app_bundle(asar: &AsarArchive) -> Option<String> {
         // Walk the header to find build/main/app-*.js
-        let files = asar.header_json.get("files")?;
-        let build = files.get("files")?.get("build")?;
+        // read_asar wraps header in {"files": {...}}, so root is already "files"
+        let root = asar.header_json.get("files")?;
+        let build = root.get("build")?;
         let main = build.get("files")?.get("main")?;
         let main_files = main.get("files")?.as_object()?;
 
@@ -236,5 +237,27 @@ mod tests {
         let content = load_bundle();
         let result = patch_bundled_app(&content);
         assert!(result.is_ok(), "full patch should succeed: {:?}", result.err());
+    }
+
+    #[test]
+    fn find_app_bundle_detects_correct_file() {
+        // Test with actual 3.18.0 asar file
+        let asar_path = r"C:\Users\Zoranner\AppData\Local\Temp\hub-test\app.asar";
+        if !std::path::Path::new(asar_path).exists() {
+            eprintln!("SKIP: {} not found", asar_path);
+            return;
+        }
+
+        let asar = crate::hub::asar::read_asar(std::path::Path::new(asar_path))
+            .expect("Failed to read asar");
+
+        let bundle = EsmStrategy::find_app_bundle(&asar);
+        assert!(bundle.is_some(), "Should find app-*.js bundle");
+
+        let bundle_name = bundle.unwrap();
+        assert!(bundle_name.starts_with("build/main/app-"), "Bundle path should start with build/main/app-");
+        assert!(bundle_name.ends_with(".js"), "Bundle should be a .js file");
+
+        eprintln!("✓ Found bundle: {}", bundle_name);
     }
 }
