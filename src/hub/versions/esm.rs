@@ -121,7 +121,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
             createdAt: "2024-01-01T00:00:00.000Z",
         };
     }"#;
-    result = replace_fn_body(&result, "constructor(loggerFactory", new_constructor)
+    result = replace_fn_body(&result, "constructor(loggerFactory, windowActions, runtimePowerMonitor", new_constructor)
         .context("patch constructor failed")?;
 
     // 5. Patch restoreAuthState() — set loggedIn and broadcast events
