@@ -138,5 +138,6 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            artifacts/unifuck-x86_64-pc-windows-msvc/unifuck-x86_64-pc-windows-msvc.zip
+            artifacts/unifuck-x86_64-pc-windows-msvc.zip
