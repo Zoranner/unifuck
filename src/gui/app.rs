@@ -10,7 +10,8 @@ pub struct AppState {
     pub hub_selected: bool,
     pub running: bool,
     pub done: bool,
-    pub had_error: bool,
+    pub success_count: usize,
+    pub error_count: usize,
     pub first_error: String,
     pub rx: Option<mpsc::Receiver<String>>,
     /// 当前选择模式: `Some(true)` = 选中均为已 patched (UN-PATCH 模式),
@@ -46,7 +47,8 @@ impl AppState {
             hub_selected: false,
             running: false,
             done: false,
-            had_error: false,
+            success_count: 0,
+            error_count: 0,
             first_error: String::new(),
             rx: None,
             selection_mode: None,
@@ -118,9 +120,14 @@ impl AppState {
                 updated = true;
                 if msg.is_empty() {
                     done = true;
-                } else if msg.starts_with("ERR") && !self.had_error {
-                    self.had_error = true;
-                    self.first_error = msg.strip_prefix("ERR").unwrap_or(&msg).trim().to_string();
+                } else if msg.starts_with("OK") {
+                    self.success_count += 1;
+                } else if msg.starts_with("ERR") {
+                    self.error_count += 1;
+                    if self.first_error.is_empty() {
+                        self.first_error =
+                            msg.strip_prefix("ERR").unwrap_or(&msg).trim().to_string();
+                    }
                 } else if let Some(rest) = msg.strip_prefix("META ") {
                     // 线程内传递的元数据 (非用户可见日志)
                     if rest == "cleaned-globals" {

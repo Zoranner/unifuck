@@ -106,22 +106,41 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
         }
         sync_ui(&win, &app);
         if just_finished {
-            let ok = !app.had_error;
+            let ok = app.error_count == 0;
+            let partial = app.success_count > 0 && app.error_count > 0;
             let is_unpatch = app.last_op_unpatch;
+
             let text: slint::SharedString = if ok {
+                // 全部成功
                 if is_unpatch {
                     if app.cleaned_globals {
-                        "DLL restored, license and hosts cleaned.".into()
+                        format!(
+                            "{} target(s) restored, license and hosts cleaned up.",
+                            app.success_count
+                        )
+                        .into()
                     } else {
-                        "DLL restored. License and hosts kept (other patched editors remain)."
-                            .into()
+                        format!(
+                            "{} target(s) restored. License and hosts kept (other targets still patched).",
+                            app.success_count
+                        )
+                        .into()
                     }
                 } else {
-                    "License deployed and hosts configured.".into()
+                    format!("{} target(s) patched, license deployed.", app.success_count).into()
                 }
+            } else if partial {
+                // 部分成功
+                let summary = format!("{} succeeded, {} failed", app.success_count, app.error_count);
+                let err_info = truncate_error(&app.first_error, 40);
+                format!("{}\n{}", summary, err_info).into()
             } else {
-                app.first_error.clone().into()
+                // 全部失败
+                let summary = format!("0 succeeded, {} failed", app.error_count);
+                let err_info = truncate_error(&app.first_error, 40);
+                format!("{}\n{}", summary, err_info).into()
             };
+
             win.set_result_ok(if ok { 1 } else { 0 });
             win.set_result_mode(if is_unpatch { 1 } else { 0 });
             win.set_result_text(text);
@@ -180,7 +199,8 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             let mut app = s.borrow_mut();
             app.running = true;
             app.done = false;
-            app.had_error = false;
+            app.success_count = 0;
+            app.error_count = 0;
             app.first_error.clear();
             app.cleaned_globals = false;
             app.last_op_unpatch = is_unpatch;
@@ -357,4 +377,12 @@ fn run_unpatch(
         tx.send("OK  un-patch complete".into()).ok();
     }
     tx.send(String::new()).ok();
+}
+
+fn truncate_error(err: &str, max_chars: usize) -> String {
+    if err.len() <= max_chars {
+        err.to_string()
+    } else {
+        format!("{}...", &err[..max_chars])
+    }
 }
