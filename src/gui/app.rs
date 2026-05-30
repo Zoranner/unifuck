@@ -189,7 +189,7 @@ pub fn sync_ui(window: &super::AppWindow, state: &AppState) {
             None => false,
         };
         items.push(super::InstallItem {
-            version: i.version.clone().into(),
+            version: format!("Editor {}", i.version).into(),
             path: i.dll_path.display().to_string().into(),
             status: (if p { "PATCHED" } else { "UNPATCHED" }).into(),
             st_color: if p {
