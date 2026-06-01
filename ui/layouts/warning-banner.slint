@@ -9,12 +9,28 @@ export component WarningBanner inherits Rectangle {
     background: #1a1a1a;
 
     property <float> phase: 0;
+    property <int> banner-index: 0;
+    property <[string]> banners: [
+        "⚠ FOR RESEARCH USE ONLY · NOT FOR COMMERCIAL USE ⚠",
+        "⚠ ALL YOUR LICENSE ARE BELONG TO US ⚠",
+        "⚠ UNITY IS NOW A SUGGESTION · NOT A REQUIREMENT ⚠",
+        "⚠ ACTIVATED IN THE YEAR 1970 · BEFORE UNITY EXISTED ⚠",
+        "⚠ NO WARRANTY EXPRESSED OR IMPLIED · USE AT OWN RISK ⚠",
+    ];
 
     Timer {
         interval: 30ms;
         running: true;
         triggered => {
             root.phase = mod(root.phase + 1, 80);
+        }
+    }
+
+    Timer {
+        interval: 4000ms;
+        running: true;
+        triggered => {
+            root.banner-index = mod(root.banner-index + 1, banners.length);
         }
     }
 
@@ -55,7 +71,7 @@ export component WarningBanner inherits Rectangle {
     // 警示文字 (居中, 黄色加粗)
     Text {
         width: 100%; height: 100%;
-        text: "⚠ FOR RESEARCH USE ONLY · NOT FOR COMMERCIAL USE ⚠";
+        text: root.banners[root.banner-index];
         font-family: Theme.font-mono;
         font-size: 10px;
         font-weight: 700;
