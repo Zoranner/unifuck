@@ -84,13 +84,20 @@ fn patch_license_service_js(content: &str) -> anyhow::Result<String> {
 }
 
 fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
+    // Return shape must match convertEntitlementGroupsIntoLicenses() which
+    // reads: productName, entitlementGroupId, startDate, expirationDate,
+    // updateDate, licenseType, validationErrors.
+    // Missing entitlementGroupId → undefined.startsWith() crash in isEGL().
     let new_body = r#"{
         return __awaiter(this, void 0, void 0, function* () {
             return [{
                 startDate: new Date('1993-01-01T08:00:00.000Z'),
                 expirationDate: new Date('9999-01-01T08:00:00.000Z'),
+                updateDate: new Date('2024-01-01T08:00:00.000Z'),
                 productName: __importDefault(require("../../i18nHelper")).default.i18n.translate('license-management:TYPE_EDUCATION'),
                 licenseType: 'ULF',
+                entitlementGroupId: 'E4-unifuck-edu-001',
+                validationErrors: [],
             }];
         });
     }"#;
@@ -107,8 +114,29 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
     let result = replace_fn_body(content, "init(externalCorrelationId", new_init)
         .context("patch init(externalCorrelationId) failed")?;
 
+    // Return a stub instead of null — editorapp.js calls
+    // `licensingSdk.getInstance().getConnectedPipeName()` without try/catch,
+    // so returning null causes a TypeError that crashes project launch.
     let new_get_instance = r#"{
-        return null;
+        return {
+            getConnectedPipeName() { return ''; },
+            connect() { return Promise.resolve(false); },
+            dispose() { return Promise.resolve(); },
+            getMachineId() { return Promise.resolve(''); },
+            getCorrelationId() { return Promise.resolve(''); },
+            getAllEntitlementGroups() { return Promise.resolve({ entitlementGroupsDetails: [] }); },
+            checkEntitlement() { return Promise.resolve(true); },
+            checkFeatureStatus() { return Promise.resolve({ featureStatus: 0 }); },
+            importLicense() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            generateUnityAlf() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            activateUlfLicense() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            returnEntitlementGroup() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub', returnEntitlementGroupResults: [{ statusCode: 500 }] }); },
+            borrowLicense() { return Promise.resolve({ licenseError: 'Generic' }); },
+            returnBorrow() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            activateAllEntitlementBasedLicenses() { return Promise.resolve({ isSuccessful: () => true }); },
+            updateLicenses() { return Promise.resolve({ isSuccessful: () => true, responseCode: 0, responseStatus: 'stub' }); },
+            setAccessToken() { return Promise.resolve(); },
+        };
     }"#;
     replace_fn_body(&result, "getInstance(", new_get_instance).context("patch getInstance failed")
 }
