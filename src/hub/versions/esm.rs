@@ -116,7 +116,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
             name: "Unifuck",
             email: "bypass@local",
             primaryOrg: "local",
-            createdAt: "2024-01-01T00:00:00.000Z",
+            createdAt: "1970-01-01T00:00:00.000Z",
         };
     }"#;
     result = replace_fn_body(
