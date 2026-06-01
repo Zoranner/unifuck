@@ -18,6 +18,25 @@ fn main() -> anyhow::Result<()> {
     sync_ui(&window, &state.borrow());
     gui::bindings::connect(&window, state.clone());
 
+    // 窗口居中 (Windows API)
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::UI::WindowsAndMessaging::{
+            GetSystemMetrics, SM_CXSCREEN, SM_CYSCREEN,
+        };
+        unsafe {
+            let screen_w = GetSystemMetrics(SM_CXSCREEN);
+            let screen_h = GetSystemMetrics(SM_CYSCREEN);
+            let win_w = 440;
+            let win_h = 320;
+            let x = (screen_w - win_w) / 2;
+            let y = (screen_h - win_h) / 2;
+            window
+                .window()
+                .set_position(slint::PhysicalPosition::new(x, y));
+        }
+    }
+
     // 关闭按钮
     window.on_close_window(move || {
         let _ = slint::quit_event_loop();
