@@ -1,6 +1,7 @@
 import { Theme } from "../styles/theme.slint";
+import { NeonButton } from "../effects/neon-button.slint";
 
-// 底栏: 居中霓虹发光按钮
+// 底栏: 居中霓虹发光按钮 + 间歇 glitch (RGB 分裂)
 export component ActionBar inherits Rectangle {
     in property <bool> busy;
     in property <bool> is-unpatch;
@@ -8,6 +9,12 @@ export component ActionBar inherits Rectangle {
     callback activate();
 
     property <bool> disabled: busy || !has-selection;
+
+    // === Glitch 状态 (参考 HeaderBar: 帧计数 + 双素数模判定, 伪随机间歇) ===
+    // 100ms × 600 帧 = 60s 完整周期; mod 29 ≈ 2.9s, mod 41 ≈ 4.1s, 各持续 100ms
+    property <int> glitch-frame: 0;
+    property <bool> glitch-active: !root.disabled
+        && (Math.mod(root.glitch-frame, 29) == 0 || Math.mod(root.glitch-frame, 41) == 0);
 
     min-height: 44px;
     max-height: 44px;
@@ -35,86 +42,27 @@ export component ActionBar inherits Rectangle {
 
         Rectangle { horizontal-stretch: 1; }
 
-        // 主按钮: 双层发光边框 + 等宽大写文字
-        Rectangle {
-            width: 150px; height: 28px;
-            border-radius: Theme.radius-sm;
-
-            // 外层发光 (品红光晕, hover 时变青)
-            drop-shadow-color: root.disabled
-                ? transparent
-                : btn-area.has-hover ? Theme.cyan-glow : Theme.magenta-glow-soft;
-            drop-shadow-blur: btn-area.has-hover ? 16px : 10px;
-            drop-shadow-offset-x: 0;
-            drop-shadow-offset-y: 0;
-
-            // 边框
-            border-width: 1px;
-            border-color: root.disabled
-                ? Theme.purple-line
-                : btn-area.has-hover ? Theme.cyan-50 : Theme.magenta-50;
-
-            // 背景: 深紫, hover 略亮
-            background: root.disabled
-                ? Theme.purple-bg-2
-                : btn-area.pressed
-                    ? Theme.purple-bg-4
-                    : btn-area.has-hover ? Theme.purple-bg-3 : Theme.purple-bg-2;
-            opacity: root.disabled ? 0.45 : 1;
-
-            btn-area := TouchArea {
-                enabled: !root.disabled;
-                mouse-cursor: root.disabled ? default : pointer;
-                clicked => { root.activate(); }
-            }
-
-            if btn-area.has-hover && !root.disabled : Rectangle {
-                x: 8px;
-                y: -1px;
-                width: 38px;
-                height: 1px;
-                background: Theme.cyan-50;
-                opacity: 0.9;
-            }
-
-            if btn-area.has-hover && !root.disabled : Rectangle {
-                x: parent.width - 52px;
-                y: parent.height;
-                width: 44px;
-                height: 1px;
-                background: Theme.magenta-50;
-                opacity: 0.85;
-            }
-
-            // 内描边 (双色霓虹: hover 时品红, 默认青)
-            Rectangle {
-                x: 2px; y: 2px;
-                width: parent.width - 4px;
-                height: parent.height - 4px;
-                border-width: 1px;
-                border-color: root.disabled
-                    ? transparent
-                    : btn-area.has-hover ? Theme.magenta-50 : Theme.cyan-dim;
-                background: transparent;
-                opacity: 0.5;
-            }
-
-            Text {
-                text: root.busy
-                    ? (root.is-unpatch ? "UN-PATCHING..." : "PATCHING...")
-                    : (root.is-unpatch ? "UN-PATCH" : "PATCH");
-                font-family: Theme.font-mono;
-                font-size: Theme.font-md;
-                font-weight: 700;
-                letter-spacing: 2px;
-                color: root.disabled
-                    ? Theme.text-dim
-                    : btn-area.has-hover ? Theme.cyan-bright : Theme.text-bright;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
+        NeonButton {
+            width: 150px;
+            height: 28px;
+            text: root.busy
+                ? (root.is-unpatch ? "UN-PATCHING..." : "PATCHING...")
+                : (root.is-unpatch ? "UN-PATCH" : "PATCH");
+            disabled: root.disabled;
+            glitch-frame: root.glitch-frame;
+            glitch-active: root.glitch-active;
+            clicked => { root.activate(); }
         }
 
         Rectangle { horizontal-stretch: 1; }
+    }
+
+    // Glitch 帧定时器 (100ms, 始终运行, 双素数模判定产生 2-4s 间歇脉冲)
+    Timer {
+        interval: 100ms;
+        running: true;
+        triggered => {
+            root.glitch-frame = Math.mod(root.glitch-frame + 1, 600);
+        }
     }
 }

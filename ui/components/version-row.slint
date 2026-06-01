@@ -1,4 +1,5 @@
 import { Theme } from "../styles/theme.slint";
+import { RGBSplitText } from "../effects/rgb-split-text.slint";
 
 // 扁平版本行: 左 4px 状态色条 (恒色) + 霓虹 checkbox + 右侧状态徽章
 export component VersionRow inherits Rectangle {
@@ -40,67 +41,104 @@ export component VersionRow inherits Rectangle {
         drop-shadow-offset-y: 0;
     }
 
-    // 霓虹 checkbox (空心方框, 选中=品红填充)
-    Rectangle {
-        x: 14px; y: (parent.height - Theme.checkbox-size) / 2;
-        width: Theme.checkbox-size; height: Theme.checkbox-size;
-        border-radius: 1px;
-        border-width: 1px;
-        border-color: root.selected
-            ? Theme.magenta-50
-            : (!root.disabled && area.has-hover) ? Theme.cyan-50 : Theme.purple-line;
-        background: root.selected ? Theme.magenta-50 : transparent;
-        drop-shadow-color: root.selected
-            ? Theme.magenta-glow
-            : (!root.disabled && area.has-hover) ? Theme.cyan-glow-soft : transparent;
-        drop-shadow-blur: 6px;
-        drop-shadow-offset-x: 0;
-        drop-shadow-offset-y: 0;
+    // 常规内容: 始终可见, RGB 色彩分离层叠加其上
+    normal-content := Rectangle {
+        width: 100%; height: 100%;
 
-        if root.selected : Rectangle {
-            x: (parent.width - 6px) / 2;
-            y: (parent.height - 6px) / 2;
-            width: 6px; height: 6px;
-            background: Theme.purple-bg-0;
+        // 霓虹 checkbox (空心方框, 选中=品红填充)
+        Rectangle {
+            x: 14px; y: (parent.height - Theme.checkbox-size) / 2;
+            width: Theme.checkbox-size; height: Theme.checkbox-size;
+            border-radius: 1px;
+            border-width: 1px;
+            border-color: root.selected
+                ? Theme.magenta-50
+                : (!root.disabled && area.has-hover) ? Theme.cyan-50 : Theme.purple-line;
+            background: root.selected ? Theme.magenta-50 : transparent;
+            drop-shadow-color: root.selected
+                ? Theme.magenta-glow
+                : (!root.disabled && area.has-hover) ? Theme.cyan-glow-soft : transparent;
+            drop-shadow-blur: 6px;
+            drop-shadow-offset-x: 0;
+            drop-shadow-offset-y: 0;
+
+            if root.selected : Rectangle {
+                x: (parent.width - 6px) / 2;
+                y: (parent.height - 6px) / 2;
+                width: 6px; height: 6px;
+                background: Theme.purple-bg-0;
+            }
+        }
+
+        // RGB 色彩分离层: hover 时显示, 红 +1px / 蓝 -1px (在原字下面, z-order 更低)
+        RGBSplitText {
+            x: 40px;
+            y: 4px;
+            width: parent.width - 160px;
+            height: 20px;
+            clip: true;
+            text: root.version;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-lg;
+            font-weight: 700;
+            text-color: transparent;
+            offset: 1px;
+            active: !root.disabled && area.has-hover;
+        }
+
+        // 版本号 (大号青色等宽, z-order 最高, 盖住 RGB 层)
+        version-text := Text {
+            x: 40px; y: 4px;
+            width: parent.width - 160px;
+            height: 20px;
+            text: root.version;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-lg; font-weight: 700;
+            color: (!root.disabled && area.has-hover) ? Theme.cyan-bright : Theme.cyan-50;
+            vertical-alignment: center;
+        }
+
+        // 路径 (次级灰紫色)
+        Text {
+            x: 40px; y: 23px;
+            width: parent.width - 160px;
+            height: 18px;
+            text: root.path;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-xs;
+            color: Theme.text-faint;
+            overflow: elide;
+            vertical-alignment: center;
         }
     }
 
-    // 版本号 (大号青色等宽)
-    Text {
-        x: 40px; y: 4px;
-        width: parent.width - 160px;
-        height: 20px;
-        text: root.version;
-        font-family: Theme.font-mono;
-        font-size: Theme.font-lg; font-weight: 700;
-        color: (!root.disabled && area.has-hover) ? Theme.cyan-bright : Theme.cyan-50;
-        vertical-alignment: center;
-    }
-
-    // 路径 (次级灰紫色)
-    Text {
-        x: 40px; y: 23px;
-        width: parent.width - 160px;
-        height: 18px;
-        text: root.path;
-        font-family: Theme.font-mono;
-        font-size: Theme.font-xs;
-        color: Theme.text-faint;
-        overflow: elide;
-        vertical-alignment: center;
-    }
-
-    // 状态徽章 (右侧, 半透明填充 + 边框 + 亮文字)
+    // 状态徽章 (右侧, 半透明填充 + 边框 + 亮文字, 选中/hover 时脉冲发光)
     Rectangle {
+        // 脉冲动画: 周期 2s, sin 平滑, 仅选中或 hover 时激活
+        in property <bool> pulse-active: root.selected || (!root.disabled && area.has-hover);
+        // phase 在 [0, 1) 循环, 对应 2π 弧度
+        in-out property <float> phase: 0;
+        // 脉冲因子: 激活时 sin 曲线 0↔1, 非激活时固定 0.5 (静态中间值)
+        in property <float> pulse: pulse-active ? (sin(phase * 360deg) + 1) / 2 : 0.5;
+
+        Timer {
+            interval: 33ms;
+            running: true;
+            triggered => {
+                // 33ms / 2000ms = 0.0165, 取模保证 [0,1)
+                phase = mod(phase + 0.0165, 1);
+            }
+        }
+
         x: parent.width - self.width - 12px;
         y: (parent.height - self.height) / 2;
         width: 88px; height: 22px;
-        border-width: 1px;
+        border-width: 1px + 1px * pulse;
         border-color: root.status-color;
         border-radius: 2px;
         background: root.status-color.with-alpha(0.22);
         drop-shadow-color: root.status-color;
-        drop-shadow-blur: (!root.disabled && area.has-hover) ? 8px : 4px;
+        drop-shadow-blur: 4px + 4px * pulse;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
 

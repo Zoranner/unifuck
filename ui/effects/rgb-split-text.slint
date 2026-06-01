@@ -1,0 +1,70 @@
+import { Theme } from "../styles/theme.slint";
+
+// RGB 色彩分离文字: 原文字 + 红层右偏 + 蓝层左偏
+// active 为 false 时只显示原文字, 为 true 时显示三层
+export component RGBSplitText inherits Rectangle {
+    in property <string> text;
+    in property <string> font-family: Theme.font-mono;
+    in property <length> font-size: Theme.font-md;
+    in property <int> font-weight: 400;
+    in property <length> letter-spacing;
+    in property <color> text-color: Theme.text-bright;
+    in property <length> offset: 1px;
+    in property <bool> active: false;
+    in property <int> horizontal-alignment: 0;  // 0=left, 1=center, 2=right
+    in property <int> vertical-alignment: 0;    // 0=top, 1=center, 2=bottom
+
+    background: transparent;
+
+    // 红层: 向右偏移 (先绘制, z-order 低)
+    if root.active : Text {
+        x: root.offset;
+        width: 100%;
+        height: 100%;
+        text: root.text;
+        font-family: root.font-family;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        letter-spacing: root.letter-spacing;
+        color: #ff0040;
+        opacity: 0.7;
+        horizontal-alignment: root.horizontal-alignment == 0 ? left
+            : root.horizontal-alignment == 1 ? center : right;
+        vertical-alignment: root.vertical-alignment == 0 ? top
+            : root.vertical-alignment == 1 ? center : bottom;
+    }
+
+    // 蓝层: 向左偏移 (先绘制, z-order 低)
+    if root.active : Text {
+        x: -root.offset;
+        width: 100%;
+        height: 100%;
+        text: root.text;
+        font-family: root.font-family;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        letter-spacing: root.letter-spacing;
+        color: #00e5ff;
+        opacity: 0.7;
+        horizontal-alignment: root.horizontal-alignment == 0 ? left
+            : root.horizontal-alignment == 1 ? center : right;
+        vertical-alignment: root.vertical-alignment == 0 ? top
+            : root.vertical-alignment == 1 ? center : bottom;
+    }
+
+    // 原文字 (最后绘制, z-order 最高, 覆盖偏移层)
+    Text {
+        width: 100%;
+        height: 100%;
+        text: root.text;
+        font-family: root.font-family;
+        font-size: root.font-size;
+        font-weight: root.font-weight;
+        letter-spacing: root.letter-spacing;
+        color: root.text-color;
+        horizontal-alignment: root.horizontal-alignment == 0 ? left
+            : root.horizontal-alignment == 1 ? center : right;
+        vertical-alignment: root.vertical-alignment == 0 ? top
+            : root.vertical-alignment == 1 ? center : bottom;
+    }
+}

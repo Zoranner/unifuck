@@ -1,0 +1,215 @@
+import { Theme } from "../styles/theme.slint";
+import { RGBSplitText } from "./rgb-split-text.slint";
+
+// 霓虹发光按钮: 赛博朋克风格, 双层发光边框 + glitch RGB 分裂 + 粒子爆发 + 点击波纹 + hover 装饰线
+// glitch-frame / glitch-active 由外部传入, 与全局 glitch 同步
+export component NeonButton inherits Rectangle {
+    in property <string> text;
+    in property <bool> disabled: false;
+    in property <color> accent: Theme.magenta-50;
+    in property <color> accent-glow: Theme.magenta-glow-soft;
+    in property <color> accent-secondary: Theme.cyan-50;
+    in property <int> glitch-frame: 0;
+    in property <bool> glitch-active: false;
+
+    callback clicked();
+
+    width: 150px;
+    height: 28px;
+    background: transparent;
+
+    property <length> glitch-shift: root.glitch-active ? 1px : 0px;
+
+    // === 粒子爆发状态 (Timer 驱动 0→1, 300ms, 可重复触发) ===
+    property <float> burst-progress: 0;
+
+    // === 点击波纹状态 (Timer 驱动 0→1, 600ms, 可重复触发) ===
+    property <float> ripple-progress: 0;
+    property <length> ripple-cx: root.width / 2;
+    property <length> ripple-cy: root.height / 2;
+
+    // 粒子爆发定时器 (16ms × ~19 帧 ≈ 300ms)
+    Timer {
+        interval: 16ms;
+        running: root.burst-progress > 0 && root.burst-progress < 1;
+        triggered => {
+            root.burst-progress = min(root.burst-progress + 16.0 / 300.0, 1);
+        }
+    }
+
+    // 波纹扩散定时器 (16ms × ~38 帧 ≈ 600ms)
+    Timer {
+        interval: 16ms;
+        running: root.ripple-progress > 0 && root.ripple-progress < 1;
+        triggered => {
+            root.ripple-progress = min(root.ripple-progress + 16.0 / 600.0, 1);
+        }
+    }
+
+    // === 按钮视觉层 ===
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        border-radius: Theme.radius-sm;
+
+        // 外层发光 (hover 时变青)
+        drop-shadow-color: root.disabled
+            ? transparent
+            : btn-area.has-hover ? Theme.cyan-glow : root.accent-glow;
+        drop-shadow-blur: btn-area.has-hover ? 16px : 10px;
+        drop-shadow-offset-x: 0;
+        drop-shadow-offset-y: 0;
+
+        // 主边框 (glitch 时保留作为基底, 配合 RGB 分裂层叠加)
+        border-width: 1px;
+        border-color: root.disabled
+            ? Theme.purple-line
+            : btn-area.has-hover ? root.accent-secondary : root.accent;
+
+        // 背景: 深紫, hover 略亮
+        background: root.disabled
+            ? Theme.purple-bg-2
+            : btn-area.pressed
+                ? Theme.purple-bg-4
+                : btn-area.has-hover ? Theme.purple-bg-3 : Theme.purple-bg-2;
+        opacity: root.disabled ? 0.45 : 1;
+
+        if btn-area.has-hover && !root.disabled : Rectangle {
+            x: 8px;
+            y: -1px;
+            width: 38px;
+            height: 1px;
+            background: Theme.cyan-50;
+            opacity: 0.9;
+        }
+
+        if btn-area.has-hover && !root.disabled : Rectangle {
+            x: parent.width - 52px;
+            y: parent.height;
+            width: 44px;
+            height: 1px;
+            background: Theme.magenta-50;
+            opacity: 0.85;
+        }
+
+        // 内描边 (双色霓虹: hover 时品红, 默认青)
+        Rectangle {
+            x: 2px; y: 2px;
+            width: parent.width - 4px;
+            height: parent.height - 4px;
+            border-width: 1px;
+            border-color: root.disabled
+                ? transparent
+                : btn-area.has-hover ? Theme.magenta-50 : Theme.cyan-dim;
+            background: transparent;
+            opacity: 0.5;
+        }
+
+        // Glitch 边框 RGB 分裂: 红层 (-shift)
+        if root.glitch-active : Rectangle {
+            x: -root.glitch-shift;
+            y: -root.glitch-shift;
+            width: parent.width + root.glitch-shift * 2;
+            height: parent.height + root.glitch-shift * 2;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: #ff0040;
+            background: transparent;
+            opacity: 0.7;
+        }
+
+        // Glitch 边框 RGB 分裂: 青层 (+shift)
+        if root.glitch-active : Rectangle {
+            x: root.glitch-shift;
+            y: root.glitch-shift;
+            width: parent.width - root.glitch-shift * 2;
+            height: parent.height - root.glitch-shift * 2;
+            border-radius: Theme.radius-sm;
+            border-width: 1px;
+            border-color: #00e5ff;
+            background: transparent;
+            opacity: 0.7;
+        }
+
+        // 主文字
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: root.text;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-md;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: root.disabled
+                ? Theme.text-dim
+                : btn-area.has-hover ? Theme.cyan-bright : Theme.text-bright;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        // Glitch 文字 RGB 分裂
+        RGBSplitText {
+            width: parent.width;
+            height: parent.height;
+            text: root.text;
+            font-family: Theme.font-mono;
+            font-size: Theme.font-md;
+            font-weight: 700;
+            letter-spacing: 2px;
+            text-color: transparent;
+            offset: root.glitch-shift;
+            active: root.glitch-active;
+            horizontal-alignment: 1;
+            vertical-alignment: 1;
+        }
+    }
+
+    // === 粒子爆发 (10 个小方块, 中心扩散 + 淡出) ===
+    // 角度均匀分布 + 偏移, 距离/大小按 index 变化, 青/品红交替
+    for p[i] in 10 : Rectangle {
+        property <float> angle: (i / 10.0) * 360 + Math.mod(i, 3) * 15;
+        property <length> max-dist: 35px + Math.mod(i, 4) * 12px;
+        property <color> p-color: Math.mod(i, 2) == 0 ? Theme.cyan-50 : Theme.magenta-50;
+        property <length> p-size: 3px + Math.mod(i, 3) * 1px;
+
+        width: p-size;
+        height: p-size;
+        background: p-color;
+        border-radius: 1px;
+        x: parent.width / 2 - p-size / 2
+            + cos(angle * 1deg) * max-dist * root.burst-progress;
+        y: parent.height / 2 - p-size / 2
+            + sin(angle * 1deg) * max-dist * root.burst-progress;
+        opacity: root.burst-progress > 0 && root.burst-progress < 1
+            ? (1 - root.burst-progress) * 0.9 : 0;
+    }
+
+    // === 点击波纹 (圆环从点击位置扩散, 半径 0→150px, 透明度 0.5→0) ===
+    Rectangle {
+        property <length> ripple-size: root.ripple-progress * 300px;
+        width: ripple-size;
+        height: ripple-size;
+        border-radius: ripple-size / 2;
+        x: root.ripple-cx - self.width / 2;
+        y: root.ripple-cy - self.height / 2;
+        background: transparent;
+        border-width: 2px;
+        border-color: Theme.cyan-50;
+        opacity: root.ripple-progress > 0 && root.ripple-progress < 1
+            ? (1 - root.ripple-progress) * 0.5 : 0;
+    }
+
+    // === 触摸区域 (最上层, 捕获点击) ===
+    btn-area := TouchArea {
+        width: 100%; height: 100%;
+        enabled: !root.disabled;
+        mouse-cursor: root.disabled ? default : pointer;
+        clicked => {
+            root.ripple-cx = self.mouse-x;
+            root.ripple-cy = self.mouse-y;
+            root.burst-progress = 0.001;
+            root.ripple-progress = 0.001;
+            root.clicked();
+        }
+    }
+}

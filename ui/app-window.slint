@@ -4,6 +4,11 @@ import { HeaderBar } from "layouts/status-bar.slint";
 import { ActionBar } from "layouts/action-bar.slint";
 import { WarningBanner } from "layouts/warning-banner.slint";
 import { VersionRow } from "components/version-row.slint";
+import { RGBSplitText } from "effects/rgb-split-text.slint";
+import { NeonButton } from "effects/neon-button.slint";
+import { Scanlines } from "effects/scanlines.slint";
+import { Noise } from "effects/noise.slint";
+import { HUDCorners } from "effects/hud-corners.slint";
 
 export struct InstallItem {
     version: string, path: string, status: string, st-color: color,
@@ -131,6 +136,52 @@ export component AppWindow inherits Window {
         }
     }
 
+    // === 赛博朋克背景层 (最底层装饰, 不阻挡交互) ===
+
+    // 扫描线 (多条水平亮带, 缓慢从上往下扫, ~10s 周期)
+    Rectangle {
+        x: 0; y: 0; width: 100%; height: 100%;
+        background: transparent;
+        Rectangle {
+            x: 0;
+            y: Math.mod(root.glitch-frame, 91) * 4px - 60px;
+            width: 100%;
+            height: 40px;
+            background: @linear-gradient(180deg, #00ffff00 0%, #00ffff22 40%, #00ffff33 70%, #00ffff00 100%);
+            opacity: 0.1;
+        }
+        Rectangle {
+            x: 0;
+            y: Math.mod(root.glitch-frame + 45, 91) * 4px - 60px;
+            width: 100%;
+            height: 24px;
+            background: @linear-gradient(180deg, #ff2e9a00 0%, #ff2e9a22 50%, #ff2e9a00 100%);
+            opacity: 0.08;
+        }
+        Rectangle {
+            x: 0;
+            y: Math.mod(root.glitch-frame * 2 + 30, 120) * 3px - 40px;
+            width: 100%;
+            height: 14px;
+            background: @linear-gradient(180deg, #00ffff00 0%, #00ffff22 50%, #00ffff00 100%);
+            opacity: 0.06;
+        }
+    }
+
+    // 数据噪点 (小矩形在伪随机位置闪烁, opacity 0.03)
+    Rectangle {
+        x: 0; y: 0; width: 100%; height: 100%;
+        background: transparent;
+        for noise[i] in 18 : Rectangle {
+            x: Math.mod(i * 37 + root.glitch-frame * (7 + Math.mod(i, 5)), 400) * 1px;
+            y: Math.mod(i * 53 + root.glitch-frame * (3 + Math.mod(i, 4)), 290) * 1px;
+            width: 2px + Math.mod(i, 3) * 1px;
+            height: 1px + Math.mod(i + 1, 3) * 1px;
+            background: Math.mod(i, 3) == 0 ? #ff2e9a : #00ffff;
+            opacity: Math.mod(root.glitch-frame + i * 7, 11) < 4 ? 0.03 : 0.0;
+        }
+    }
+
     // 背景扫描线 (装饰层, 不参与交互)
     Rectangle {
         x: 0;
@@ -190,7 +241,7 @@ export component AppWindow inherits Window {
         property <color> accent-glow: root.result-ok == 1 ? Theme.cyan-glow : Theme.magenta-glow;
         property <color> accent-bright: root.result-ok == 1 ? Theme.cyan-bright : Theme.magenta-bright;
         property <color> secondary-color: root.result-ok == 1 ? Theme.magenta-50 : Theme.cyan-50;
-        property <bool> dlg-glitch: Math.mod(root.glitch-frame, 9) == 0;
+        property <bool> dlg-glitch: Math.mod(root.glitch-frame, 13) == 0 || Math.mod(root.glitch-frame, 23) == 0;
 
         // 外发光层
         Rectangle {
@@ -224,6 +275,20 @@ export component AppWindow inherits Window {
             border-width: 1px;
             border-color: dlg.accent-color;
 
+            // 扫描线效果
+            Scanlines {
+                accent: dlg.accent-color;
+                count: 3;
+            }
+
+            // 角落装饰 (HUD 风格 L 形标记)
+            HUDCorners {
+                accent: dlg.accent-color;
+                arm-length: 12px;
+                arm-width: 2px;
+                corner-opacity: 0.8;
+            }
+
             // 内层次色描边
             Rectangle {
                 x: 3px; y: 3px;
@@ -236,20 +301,33 @@ export component AppWindow inherits Window {
                 opacity: 0.6;
             }
 
+            // 噪点效果
+            Noise {
+                accent: dlg.accent-color;
+                count: 5;
+                active: root.glitch-on;
+                glitch-frame: root.glitch-frame;
+            }
+
             VerticalLayout {
                 padding-left: Theme.space-2xl; padding-right: Theme.space-2xl;
                 padding-top: Theme.space-xl; padding-bottom: Theme.space-xl;
                 spacing: Theme.space-sm;
 
-                Text {
-                    text: root.result-ok == 1
-                        ? (root.result-mode == 1 ? "✅ UN-PATCH COMPLETE" : "✅ PATCH COMPLETE")
-                        : (root.result-mode == 1 ? "❌ UN-PATCH FAILED" : "❌ PATCH FAILED");
-                    font-family: Theme.font-mono;
-                    font-size: Theme.font-md;
-                    font-weight: 700;
-                    letter-spacing: 1px;
-                    color: dlg.accent-bright;
+                // 标题
+                HorizontalLayout {
+                    height: 24px;
+                    Text {
+                        text: root.result-ok == 1
+                            ? (root.result-mode == 1 ? "✅ UN-PATCH COMPLETE" : "✅ PATCH COMPLETE")
+                            : (root.result-mode == 1 ? "❌ UN-PATCH FAILED" : "❌ PATCH FAILED");
+                        font-family: Theme.font-mono;
+                        font-size: Theme.font-md;
+                        font-weight: 700;
+                        letter-spacing: 1px;
+                        color: dlg.accent-bright;
+                        vertical-alignment: center;
+                    }
                 }
                 Text {
                     text: root.result-text;
@@ -260,38 +338,38 @@ export component AppWindow inherits Window {
                 }
                 Rectangle { vertical-stretch: 1; }
 
-                // 关闭按钮
-                Rectangle {
+                // 关闭按钮 (NeonButton: 霓虹发光 + glitch + 粒子 + 波纹)
+                NeonButton {
                     height: Theme.control-height;
-                    border-radius: Theme.radius-sm;
-                    border-width: 1px;
-                    border-color: close.has-hover
-                        ? dlg.secondary-color
-                        : dlg.accent-color;
-                    background: close.pressed
-                        ? Theme.purple-bg-4
-                        : close.has-hover ? Theme.purple-bg-3 : Theme.purple-bg-2;
-                    drop-shadow-color: dlg.accent-glow;
-                    drop-shadow-blur: close.has-hover ? 12px : 6px;
-                    drop-shadow-offset-x: 0;
-                    drop-shadow-offset-y: 0;
-
-                    close := TouchArea { clicked => { root.dismiss_result(); } }
-                    Text {
-                        text: root.result-ok == 1
-                            ? root.ok-button-texts[Math.mod(root.glitch-frame / 20, root.ok-button-texts.length)]
-                            : root.fail-button-texts[Math.mod(root.glitch-frame / 20, root.fail-button-texts.length)];
-                        font-family: Theme.font-mono;
-                        font-size: Theme.font-sm;
-                        font-weight: 700;
-                        letter-spacing: 4px;
-                        color: close.has-hover
-                            ? dlg.accent-bright
-                            : Theme.text-bright;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
+                    text: root.result-ok == 1
+                        ? root.ok-button-texts[Math.mod(root.glitch-frame / 20, root.ok-button-texts.length)]
+                        : root.fail-button-texts[Math.mod(root.glitch-frame / 20, root.fail-button-texts.length)];
+                    accent: dlg.accent-color;
+                    accent-secondary: dlg.secondary-color;
+                    accent-glow: dlg.accent-glow;
+                    glitch-frame: root.glitch-frame;
+                    glitch-active: dlg.dlg-glitch;
+                    clicked => { root.dismiss_result(); }
                 }
+            }
+
+            // RGB 分离层 (标题): 绝对定位, z-order 高于 VerticalLayout
+            RGBSplitText {
+                x: Theme.space-2xl;
+                y: Theme.space-xl;
+                width: 280px;
+                height: 24px;
+                text: root.result-ok == 1
+                    ? (root.result-mode == 1 ? "✅ UN-PATCH COMPLETE" : "✅ PATCH COMPLETE")
+                    : (root.result-mode == 1 ? "❌ UN-PATCH FAILED" : "❌ PATCH FAILED");
+                font-family: Theme.font-mono;
+                font-size: Theme.font-md;
+                font-weight: 700;
+                letter-spacing: 1px;
+                text-color: transparent;
+                offset: 1px;
+                active: dlg.dlg-glitch;
+                vertical-alignment: 1;
             }
         }
     }

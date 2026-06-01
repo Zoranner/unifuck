@@ -1,0 +1,24 @@
+import { Theme } from "../styles/theme.slint";
+
+// 噪点效果: 伪随机位置的小方块闪烁
+// 位置由 Math.mod(i * 素数, 范围) 生成, 由外部 glitch-frame 驱动闪烁节奏
+export component Noise inherits Rectangle {
+    in property <color> accent: Theme.cyan-50;
+    in property <int> count: 18;
+    in property <bool> active: true;
+    in property <int> glitch-frame: 0;
+
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    clip: true;
+
+    for noise[i] in root.count : Rectangle {
+        x: Math.mod(i * 37 + root.glitch-frame * (7 + Math.mod(i, 5)), 400) * 1px;
+        y: Math.mod(i * 53 + root.glitch-frame * (3 + Math.mod(i, 4)), 290) * 1px;
+        width: 2px + Math.mod(i, 3) * 1px;
+        height: 1px + Math.mod(i + 1, 3) * 1px;
+        background: Math.mod(i, 3) == 0 ? #ff2e9a : #00ffff;
+        opacity: root.active && Math.mod(root.glitch-frame + i * 7, 11) < 4 ? 0.03 : 0.0;
+    }
+}

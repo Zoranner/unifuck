@@ -1,0 +1,89 @@
+import { Theme } from "../styles/theme.slint";
+
+// HUD 风格 L 形角落装饰: 四个角各一个 L 形标记
+export component HUDCorners inherits Rectangle {
+    in property <color> accent: Theme.cyan-50;
+    in property <length> arm-length: 12px;
+    in property <length> arm-width: 2px;
+    in property <float> corner-opacity: 0.8;
+
+    width: 100%;
+    height: 100%;
+    background: transparent;
+
+    // 左上 - 横臂
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: root.arm-length;
+        height: root.arm-width;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+    // 左上 - 竖臂
+    Rectangle {
+        x: 4px;
+        y: 4px;
+        width: root.arm-width;
+        height: root.arm-length;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+
+    // 右上 - 横臂
+    Rectangle {
+        x: parent.width - 4px - root.arm-length;
+        y: 4px;
+        width: root.arm-length;
+        height: root.arm-width;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+    // 右上 - 竖臂
+    Rectangle {
+        x: parent.width - 4px - root.arm-width;
+        y: 4px;
+        width: root.arm-width;
+        height: root.arm-length;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+
+    // 左下 - 横臂
+    Rectangle {
+        x: 4px;
+        y: parent.height - 4px - root.arm-width;
+        width: root.arm-length;
+        height: root.arm-width;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+    // 左下 - 竖臂
+    Rectangle {
+        x: 4px;
+        y: parent.height - 4px - root.arm-length;
+        width: root.arm-width;
+        height: root.arm-length;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+
+    // 右下 - 横臂
+    Rectangle {
+        x: parent.width - 4px - root.arm-length;
+        y: parent.height - 4px - root.arm-width;
+        width: root.arm-length;
+        height: root.arm-width;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+    // 右下 - 竖臂
+    Rectangle {
+        x: parent.width - 4px - root.arm-width;
+        y: parent.height - 4px - root.arm-length;
+        width: root.arm-width;
+        height: root.arm-length;
+        background: root.accent;
+        opacity: root.corner-opacity;
+    }
+}
