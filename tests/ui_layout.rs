@@ -48,10 +48,13 @@ fn header_drag_area_is_limited_to_title_region() {
 
 #[test]
 fn action_bar_does_not_expand_over_content() {
-    let source = fs::read_to_string("ui/layouts/action-bar.slint").unwrap();
+    let action_bar = fs::read_to_string("ui/layouts/action-bar.slint").unwrap();
+    let neon_button = fs::read_to_string("ui/effects/neon-button.slint").unwrap();
 
-    assert!(source.contains("min-height: 44px;"));
-    assert!(source.contains("max-height: 44px;"));
-    assert!(source.contains("vertical-stretch: 0;"));
-    assert!(source.contains("btn-area.has-hover && !root.disabled"));
+    assert!(action_bar.contains("min-height: 44px;"));
+    assert!(action_bar.contains("max-height: 44px;"));
+    assert!(action_bar.contains("vertical-stretch: 0;"));
+    assert!(action_bar.contains("disabled: root.disabled;"));
+    assert!(neon_button.contains("enabled: !root.disabled;"));
+    assert!(neon_button.contains("btn-area.has-hover && !root.disabled"));
 }
