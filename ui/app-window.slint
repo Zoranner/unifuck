@@ -34,6 +34,26 @@ export component AppWindow inherits Window {
     property <int> glitch-frame: 0;
     property <bool> glitch-on: Math.mod(glitch-frame, 17) == 0 || Math.mod(glitch-frame, 29) == 0;
 
+    // Dialog button text rotation
+    property <[string]> ok-button-texts: [
+        "HAIL HYDRA",
+        "FOR THE EMPEROR",
+        "THE DIE IS CAST",
+        "MISSION ACCOMPLISHED",
+        "CHAOS REIGNS",
+        "BOW BEFORE US",
+        "WE ARE LEGION",
+    ];
+    property <[string]> fail-button-texts: [
+        "DAMN IT",
+        "F**K OFF",
+        "BURN IN HELL",
+        "F**K",
+        "PIECE OF SH*T",
+        "EAT SH*T",
+        "GO DIE",
+    ];
+
     callback activate();
     callback toggle-select(int);
     callback poll();
@@ -258,7 +278,9 @@ export component AppWindow inherits Window {
 
                     close := TouchArea { clicked => { root.dismiss_result(); } }
                     Text {
-                        text: "OK";
+                        text: root.result-ok == 1
+                            ? root.ok-button-texts[Math.mod(root.glitch-frame / 20, root.ok-button-texts.length)]
+                            : root.fail-button-texts[Math.mod(root.glitch-frame / 20, root.fail-button-texts.length)];
                         font-family: Theme.font-mono;
                         font-size: Theme.font-sm;
                         font-weight: 700;
