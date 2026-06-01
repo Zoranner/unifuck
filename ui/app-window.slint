@@ -81,6 +81,7 @@ export component AppWindow inherits Window {
         spacing: 0;
         HeaderBar {
             version: root.app-version;
+            close-disabled: root.working;
             minimize => { root.minimize_window(); }
             close => { root.close_window(); }
             drag-start => { root.start_window_drag(); }
@@ -235,6 +236,7 @@ export component AppWindow inherits Window {
 
     // === 结果 Dialog: 成功=青描边, 失败=品红描边 ===
     if root.show-result-dialog : dlg := Rectangle {
+        x: 0; y: 30px; width: 100%; height: parent.height - 30px;
         background: Theme.dialog-backdrop;
 
         property <color> accent-color: root.result-ok == 1 ? Theme.cyan-50 : Theme.magenta-50;
@@ -340,6 +342,7 @@ export component AppWindow inherits Window {
 
                 // 关闭按钮 (NeonButton: 霓虹发光 + glitch + 粒子 + 波纹)
                 NeonButton {
+                    horizontal-stretch: 1;
                     height: Theme.control-height;
                     text: root.result-ok == 1
                         ? root.ok-button-texts[Math.mod(root.glitch-frame / 20, root.ok-button-texts.length)]

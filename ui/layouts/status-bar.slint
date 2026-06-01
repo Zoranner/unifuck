@@ -8,6 +8,7 @@ export component HeaderBar inherits Rectangle {
     callback drag-move;
 
     in property <string> version;
+    in property <bool> close-disabled: false;
     property <int> glitch-frame: 0;
     property <bool> glitch-on: Math.mod(glitch-frame, 12) == 0 || Math.mod(glitch-frame, 19) == 0;
     property <length> glitch-shift: glitch-on ? 2px : 0px;
@@ -121,8 +122,10 @@ export component HeaderBar inherits Rectangle {
     Rectangle {
         x: parent.width - 36px; y: 0;
         width: 36px; height: 100%;
-        background: close-area.has-hover ? Theme.magenta-50 : transparent;
+        background: !root.close-disabled && close-area.has-hover ? Theme.magenta-50 : transparent;
+        opacity: root.close-disabled ? 0.4 : 1;
         close-area := TouchArea {
+            enabled: !root.close-disabled;
             clicked => { root.close(); }
         }
         Text {
