@@ -151,6 +151,47 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
     result = replace_fn_body(&result, "getInstance(", new_get_instance)
         .context("patch getInstance failed")?;
 
+    // 7. Patch fetchVariants() to skip network call in airgapped environments
+    // FeatureFlagsService.fetchVariants() makes HTTP request to Amplitude Experiment API
+    // which times out in airgapped/intranet-only environments (15s timeout + retries = minutes)
+    let new_fetch_variants = r#"{
+        this.#logger.info("Fetching feature flags (skipped - offline mode)");
+        const user = await this.getExperimentUser();
+        if (!user.user_id && !user.device_id) {
+            this.#logger.info("User info and licensing info not complete, skipping fetching feature flags for now.");
+            return;
+        }
+        // Use cached variants only, skip network call
+        const { amplitude: cachedAmplitudeVariants } = this.#cache.cachedSchema;
+        if (cachedAmplitudeVariants && Object.keys(cachedAmplitudeVariants).length > 0) {
+            this.handleNewVariants({
+                previous: this.variants,
+                next: cachedAmplitudeVariants
+            });
+            this.#logger.info("Using cached feature flags");
+        }
+    }"#;
+    result = replace_fn_body(&result, "fetchVariants(", new_fetch_variants)
+        .context("patch fetchVariants failed")?;
+
+    // 8. Patch AuthService.getOrganizations() to return empty array (prevent hanging in airgapped environments)
+    // AuthService.getOrganizations() calls cloudCore.getOrganizations() which makes axios call without timeout
+    // In airgapped environments, this hangs waiting for TCP connection timeout (~18 seconds)
+    let new_get_organizations = r#"{
+        this.#logger.debug("Organization data has been requested from AuthService");
+        if (!this.connectInfo.loggedIn) throw new Error("User is not logged in");
+        if (this.userOrgs !== null) {
+            this.#logger.debug("Returning cached userOrg data");
+            return this.userOrgs;
+        }
+        // Skip network call in airgapped environments, return empty array
+        this.#logger.debug("Returning empty organization list (offline mode)");
+        this.userOrgs = [];
+        return this.userOrgs;
+    }"#;
+    result = replace_fn_body(&result, "getOrganizations(", new_get_organizations)
+        .context("patch getOrganizations failed")?;
+
     Ok(result)
 }
 
@@ -189,11 +230,47 @@ class AuthService extends BaseAuthService {
         mainContainer.get(IEventBroadcasterId).broadcast(POSTAL_TOPICS.CONNECT_INFO_CHANGED, this.connectInfo);
         getChannel("app").publish(POSTAL_TOPICS.CONNECT_INFO_CHANGED, { connectInfo: this.connectInfo });
     }
+
+    async getOrganizations() {
+        this.#logger.debug("Organization data has been requested from AuthService");
+        if (!this.connectInfo.loggedIn) throw new Error("User is not logged in");
+        if (this.userOrgs !== null) {
+            this.#logger.debug("Returning cached userOrg data");
+            return this.userOrgs;
+        }
+        this.#logger.debug("userOrg cache miss - requesting from the server.");
+        this.userOrgs = await cloudCore.getOrganizations();
+        return this.userOrgs;
+    }
 }
 
 class LicensingSdk {
     getInstance() {
         return this.instance;
+    }
+}
+
+class FeatureFlagsService {
+    async fetchVariants() {
+        try {
+            this.#logger.info("Fetching feature flags");
+            const user = await this.getExperimentUser();
+            if (!user.user_id && !user.device_id) {
+                this.#logger.info("User info and licensing info not complete");
+                return;
+            }
+            const newVariants = await this.client.fetchV2(user);
+        } catch (error) {
+            this.#logger.error("Error fetching feature flags", error);
+        }
+    }
+}
+
+class CloudCoreApiClient {
+    getOrganizations(accessToken) {
+        const url = `${mainContainer.get(ICloudConfigId).urls.core}/api/users/me?include=orgs`;
+        this.#logger.debug(`GET ${url}`);
+        return axios.get(url, this._getCommonConfig(accessToken));
     }
 }
 "#
