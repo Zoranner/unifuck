@@ -91,12 +91,12 @@ fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
     let new_body = r#"{
         return __awaiter(this, void 0, void 0, function* () {
             return [{
-                startDate: new Date('1993-01-01T08:00:00.000Z'),
+                startDate: new Date('1970-01-01T00:00:00.000Z'),
                 expirationDate: new Date('9999-01-01T08:00:00.000Z'),
                 updateDate: new Date('2024-01-01T08:00:00.000Z'),
-                productName: __importDefault(require("../../i18nHelper")).default.i18n.translate('license-management:TYPE_EDUCATION'),
+                productName: 'Unifuck Pro Max Ultra',
                 licenseType: 'ULF',
-                entitlementGroupId: 'E4-unifuck-edu-001',
+                entitlementGroupId: 'U4-Unifuck-pro-001',
                 validationErrors: [],
             }];
         });

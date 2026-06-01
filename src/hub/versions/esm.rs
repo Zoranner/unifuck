@@ -77,12 +77,12 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
     result = replace_fn_body(&result, "isUserSignedIn(", new_signed_in)
         .context("patch isUserSignedIn failed")?;
 
-    // 3. Patch getValidEntitlementGroups() → return fake education license
+    // 3. Patch getValidEntitlementGroups() → return fake Pro license
     let new_entitlements = r#"{
         return [{
-            startDate: new Date('1993-01-01T08:00:00.000Z'),
+            startDate: new Date('1970-01-01T00:00:00.000Z'),
             expirationDate: new Date('9999-01-01T08:00:00.000Z'),
-            productName: 'Education',
+            productName: 'Unifuck Pro Max Ultra',
             licenseType: 'ULF',
         }];
     }"#;
