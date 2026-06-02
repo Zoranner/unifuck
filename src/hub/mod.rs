@@ -24,6 +24,8 @@ pub(crate) fn find_hub() -> Option<HubInfo> {
     let candidates = vec![
         PathBuf::from(r"C:\Program Files\Unity Hub"),
         PathBuf::from(r"D:\Program Files\Unity Hub"),
+        PathBuf::from(r"C:\Program Files\Tuanjie Hub"),
+        PathBuf::from(r"D:\Program Files\Tuanjie Hub"),
     ];
 
     for path in candidates {
@@ -91,21 +93,28 @@ fn extract_version_from_json_str(s: &str) -> Option<String> {
 
 #[cfg(windows)]
 fn hub_path_from_registry() -> Option<PathBuf> {
+    // 优先查找 Unity Hub，找不到再尝试 Tuanjie Hub
+    query_registry_path(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Unity Hub").or_else(
+        || query_registry_path(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Tuanjie Hub"),
+    )
+}
+
+#[cfg(windows)]
+fn query_registry_path(key_path: &str) -> Option<PathBuf> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows_sys::Win32::System::Registry::*;
 
     unsafe {
-        let key_path: Vec<u16> =
-            OsStr::new(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Unity Hub")
-                .encode_wide()
-                .chain(std::iter::once(0))
-                .collect();
+        let key_path_wide: Vec<u16> = OsStr::new(key_path)
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
 
         let mut hkey: HKEY = std::ptr::null_mut();
         if RegOpenKeyExW(
             HKEY_LOCAL_MACHINE,
-            key_path.as_ptr(),
+            key_path_wide.as_ptr(),
             0,
             KEY_READ,
             &mut hkey,

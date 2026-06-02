@@ -1,5 +1,6 @@
 pub(crate) mod commonjs;
 pub(crate) mod esm;
+pub(crate) mod tuanjie;
 
 use crate::hub::asar::AsarArchive;
 
@@ -33,6 +34,12 @@ pub(crate) fn detect_strategy(asar: &AsarArchive) -> anyhow::Result<Box<dyn Patc
     let commonjs_strategy = commonjs::CommonJsStrategy;
     if commonjs_strategy.applies_to(asar) {
         return Ok(Box::new(commonjs_strategy));
+    }
+
+    // Try Tuanjie Hub (checks package.json name / Tuanjie-specific marker)
+    let tuanjie_strategy = tuanjie::TuanjieStrategy;
+    if tuanjie_strategy.applies_to(asar) {
+        return Ok(Box::new(tuanjie_strategy));
     }
 
     anyhow::bail!("Unsupported Hub version. Could not detect patch strategy.")
