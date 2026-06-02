@@ -185,36 +185,30 @@ fn hub_path_from_registry() -> Option<PathBuf> {
 | 主程序 | `Unity.exe` | `Tuanjie.exe` | ✅ 命名规则一致 |
 | DLL 名 | `Unity.Licensing.EntitlementResolver.dll` | `Tuanjie.Licensing.EntitlementResolver.dll` | ⚠️ 前缀不同 |
 | DLL 路径 | `Editor\Data\Resources\Licensing\Client\` | 同 | ✅ 一致 |
-| 证书存储 | base64 文本嵌入 .NET IL | .NET 嵌入资源 (GetManifestResourceStream) | ❌ **机制不同** |
-| 证书 CA | GlobalSign | DigiCert | ⚠️ CA 不同 |
+| 证书存储 | base64 文本嵌入 .NET IL (ASCII) | UTF-16LE PEM 字符串 (#US 堆) | ⚠️ 编码不同，替换策略需适配 |
+| 证书 CA | GlobalSign | 自签名 (Internet Widgits Pty Ltd) | ⚠️ CA 不同 |
+| 密钥 | RSA 2048 | RSA 4096 | ⚠️ 密钥大小不同 |
 | DLL 体积 | ~211 KB | ~211 KB | ✅ 一致 |
 
 ### 证书嵌入机制差异
 
 **Unity Editor (2021)**
-```csharp
-// IL 代码中直接包含 base64 字符串
-private const string CertBase64 = 
-    "MIIE7zCCA9egAwIBAgIRAJZpZsDepakv5CaXJit+yx4wDQYJKoZIhvcNAQEFBQAw\n" +
-    "VDELMAkGA1UEBhMCQkUxGTAXBgNVBAoTEEdsb2JhbFNpZ24gbnYtc2ExKjAoBgNV\n" +
-    // ...
-```
+
+证书以 ASCII base64 多行文本形式存在于 .NET IL 代码中，可直接进行字节替换。
 
 **Tuanjie Editor**
-```csharp
-// 从 .NET 嵌入资源加载
-private X509Certificate2 LoadEmbeddedCertificate() {
-    var assembly = Assembly.GetExecutingAssembly();
-    using (var stream = assembly.GetManifestResourceStream(
-        "Tuanjie.Licensing.EntitlementResolver.cert.cer")) {
-        return new X509Certificate2(stream);
-    }
-}
-```
 
-### 当前方法不可行原因
+证书以 **UTF-16LE 编码的 PEM 文本** 形式存在于 .NET `#US` (User Strings) 堆中，作为 C# 字符串字面量存储。DLL 中的 `GetManifestResourceStream` 调用实际用于加载 XSD schema 文件，而非证书。
 
-1. **字节替换失效**: Tuanjie DLL 中证书不以 base64 文本形式存在于 IL，而是作为二进制 blob 存储在 PE 资源区
+两种编码的关键差异：
+- Unity: ASCII base64 → 每个字符 1 字节
+- Tuanjie: UTF-16LE PEM → 每个字符 2 字节（低字节 = ASCII 值，高字节 = 0）
+
+**替换策略**：原始 PEM (2065 bytes) 和修改 PEM (2096 bytes) 转为 UTF-16LE 后长度完全一致 (4193 bytes)，可直接进行等长字节替换，无需修改 PE 头或 .NET 元数据。
+
+### ~~当前方法不可行原因~~ → 实际可行
+
+初步分析假设证书存储为 .NET 嵌入资源，需要 Mono.Cecil 等工具。经过完整的 PE 格式解析和二进制扫描后确认：证书存储为 UTF-16LE PEM 字符串，**字节替换方法可行**。
 2. **PE 结构破坏**: 直接替换资源区字节会破坏 PE 文件的偏移表、RVA 引用和长度字段
 3. **.NET 元数据引用**: 资源通过 `ManifestResource` 表引用，包含名称、偏移和长度，修改需同步更新元数据
 
@@ -460,7 +454,7 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
 
 ### 迁移策略
 
-Tuanjie Hub 的 Shared Licensing Client 与 Tuanjie Editor DLL **字节完全一致**，采用相同的 .NET 嵌入资源机制。迁移方案：
+Tuanjie Hub 的 Shared Licensing Client 与 Tuanjie Editor DLL **字节完全一致** (211184 bytes)，采用相同的 UTF-16LE PEM 字符串存储机制。迁移方案：
 
 1. **复用 Editor 补丁逻辑**: `patch_shared_licensing_client()` 扩展为同时检测 Unity 和 Tuanjie 路径
 2. **统一 .NET 资源替换**: 使用相同的 Mono.Cecil 工具处理两个 DLL
@@ -818,8 +812,10 @@ Start-Process "C:\Program Files\Tuanjie 2022.3.62t8\Editor\Tuanjie.exe"
 
 ## 总结
 
-Tuanjie Hub 补丁迁移**可行性高**，仅需调整 JS 补丁目标文件和登录状态注入逻辑，预计 2-3 天完成。
+Tuanjie Hub 和 Editor 补丁迁移**均已实现**。
 
-Tuanjie Editor DLL 补丁迁移**需要切换技术路线**，从字节替换改为 .NET 资源替换，预计 5-7 天完成。推荐采用 Mono.Cecil 方案，保持 PE 结构完整性。
+**Hub**: 新增 `TuanjieStrategy`，补丁 3 个 JS 文件中的 6 个函数，通过 package.json name 字段检测。
 
-建议按阶段实施，优先完成 Hub 适配 (低风险高收益)，再推进 Editor DLL 补丁工具 (中风险中收益)。
+**Editor**: 经 PE 格式深度分析发现证书以 UTF-16LE PEM 字符串存储于 .NET #US 堆中（非 .NET 嵌入资源），可直接进行等长字节替换。实现 `patch_tuanjie_dll()` 函数，复用现有备份/还原机制。
+
+**Shared Licensing Client**: Tuanjie 共享客户端 DLL 与 Editor DLL 字节一致，统一使用 UTF-16LE PEM 替换。
