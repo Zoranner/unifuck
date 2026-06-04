@@ -1,7 +1,11 @@
 pub(crate) mod asar;
 pub(crate) mod patcher;
-pub(crate) mod versions;
+pub(crate) mod payloads;
+pub(crate) mod strategy;
+pub(crate) mod tuanjie;
+pub(crate) mod unity;
 
+use crate::vendor::Vendor;
 use anyhow::Context;
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -17,6 +21,7 @@ pub(crate) struct HubInfo {
     pub name: String,
     pub version: String,
     pub asar_path: PathBuf,
+    pub vendor: Vendor,
 }
 
 // ── Hub Detection ──────────────────────────────────────────────
@@ -25,12 +30,11 @@ pub(crate) struct HubInfo {
 pub(crate) fn find_hubs() -> Vec<HubInfo> {
     let mut hubs = Vec::new();
 
-    // Try Unity Hub first (registry then Program Files on all drives),
-    // then Tuanjie Hub with the same strategy.
-    for hub_name in ["Unity Hub", "Tuanjie Hub"] {
+    for vendor in Vendor::all().iter().copied() {
+        let hub_name = vendor.hub_name();
         for hub_root in crate::discovery::find_hub_roots(hub_name) {
             let asar = hub_root.join(HUB_ASAR_REL);
-            if let Some(info) = hub_info_from_path(hub_name, &hub_root, &asar) {
+            if let Some(info) = hub_info_from_path(vendor, &hub_root, &asar) {
                 hubs.push(info);
             }
         }
@@ -45,12 +49,13 @@ pub(crate) fn find_hub() -> Option<HubInfo> {
     find_hubs().into_iter().next()
 }
 
-fn hub_info_from_path(hub_name: &str, hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
+fn hub_info_from_path(vendor: Vendor, hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
     let version = read_hub_version(hub_path, asar_path).unwrap_or_else(|| "unknown".to_string());
     Some(HubInfo {
-        name: hub_name.to_string(),
+        name: vendor.hub_name().to_string(),
         version,
         asar_path: asar_path.to_path_buf(),
+        vendor,
     })
 }
 
@@ -100,8 +105,16 @@ pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
     // Read
     let asar = asar::read_asar(asar_path)?;
 
-    // Detect version and get strategy
-    let strategy = versions::detect_strategy(&asar)?;
+    // Dispatch to the per-vendor strategy detector.
+    let strategy = match info.vendor {
+        Vendor::Unity => unity::detect_strategy(&asar)?,
+        Vendor::Tuanjie => tuanjie::detect_strategy(&asar)?,
+    };
+    eprintln!(
+        "hub patch: vendor={} strategy={}",
+        info.vendor.display_name(),
+        strategy.version_name()
+    );
 
     // Apply patches
     let modified = strategy.apply_patches(&asar)?;

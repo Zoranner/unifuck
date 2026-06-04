@@ -5,6 +5,7 @@ mod core;
 mod discovery;
 mod gui;
 mod hub;
+mod vendor;
 
 use gui::app::{sync_ui, AppState};
 use slint::ComponentHandle;

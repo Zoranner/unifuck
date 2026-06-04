@@ -1,20 +1,17 @@
-mod binary_patch;
+mod cert;
 mod hosts;
 mod install;
 mod license;
 
 use base64::Engine;
 
-pub use binary_patch::{
-    is_exe_patched, is_shared_licensing_client_patched, patch_dll, patch_exe,
+pub use cert::{
+    is_exe_patched, is_patched, is_shared_licensing_client_patched, patch_dll, patch_exe,
     patch_shared_licensing_client, unpatch_dll, unpatch_exe, unpatch_shared_licensing_client,
 };
 pub use hosts::{clean_hosts, write_hosts_if_needed};
-pub use install::{is_patched, scan_installations, UnityInstall};
+pub use install::{scan_installations, EditorInstall};
 pub use license::{deploy_license, remove_license, sign_license};
-
-pub(super) const MOD_CERT_PEM: &[u8] =
-    include_bytes!("../../keys/mod/Unity.Licensing.EntitlementResolver.Unity.cer");
 
 pub(super) fn base64_lines(der: &[u8]) -> String {
     let b64 = base64::engine::general_purpose::STANDARD.encode(der);

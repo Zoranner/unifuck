@@ -1,14 +1,13 @@
 use crate::core;
+use crate::core::EditorInstall;
 use crate::gui::app::AppState;
 use crate::hub::{self, HubInfo};
-use std::path::PathBuf;
 use std::sync::mpsc;
 use std::thread;
 
 struct JobTargets {
-    selected: Vec<core::UnityInstall>,
-    all_paths: Vec<PathBuf>,
-    all_exe_paths: Vec<PathBuf>,
+    selected: Vec<EditorInstall>,
+    all_installs: Vec<EditorInstall>,
     hubs: Vec<HubInfo>,
     hub_selected: Vec<bool>,
     is_unpatch: bool,
@@ -60,8 +59,7 @@ fn collect_targets(app: &AppState) -> Option<JobTargets> {
 
     Some(JobTargets {
         selected,
-        all_paths: app.installs.iter().map(|i| i.dll_path.clone()).collect(),
-        all_exe_paths: app.installs.iter().map(|i| i.exe_path.clone()).collect(),
+        all_installs: app.installs.clone(),
         hubs: app.hubs.clone(),
         hub_selected: app.hub_selected.clone(),
         is_unpatch: mode,
@@ -72,15 +70,15 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
     for inst in &targets.selected {
-        let label = format!("{} {}", inst.display_name, inst.version);
-        if core::is_patched(&inst.dll_path) {
+        let label = format!("{} {}", inst.vendor.display_name(), inst.version);
+        if core::is_patched(inst) {
             tx.send(format!("TOK  {}  already patched, skipped", label))
                 .ok();
             ok = true;
             continue;
         }
         tx.send(format!("..  {}  patching DLL...", label)).ok();
-        match core::patch_dll(&inst.dll_path) {
+        match core::patch_dll(inst.vendor, &inst.dll_path) {
             Ok(()) => {
                 tx.send(format!("TOK  {}  DLL patched", label)).ok();
                 tx.send(format!("..  {}  patching exe...", label)).ok();
@@ -190,7 +188,7 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
     for inst in &targets.selected {
-        let label = format!("{} {}", inst.display_name, inst.version);
+        let label = format!("{} {}", inst.vendor.display_name(), inst.version);
         tx.send(format!("..  {}  un-patching...", label)).ok();
         match core::unpatch_dll(&inst.dll_path) {
             Ok(()) => {
@@ -253,11 +251,11 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
 }
 
 fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &JobTargets) {
-    let any_editor_left = targets.all_paths.iter().any(|p| core::is_patched(p))
+    let any_editor_left = targets.all_installs.iter().any(core::is_patched)
         || targets
-            .all_exe_paths
+            .all_installs
             .iter()
-            .any(|p| core::is_exe_patched(p))
+            .any(|i| core::is_exe_patched(&i.exe_path))
         || core::is_shared_licensing_client_patched();
     let any_hub_left = targets
         .hubs

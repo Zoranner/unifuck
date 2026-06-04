@@ -73,8 +73,8 @@ pub(crate) fn read_editor_paths_from_config() -> Vec<PathBuf> {
         Err(_) => return paths,
     };
 
-    for config_dir in ["UnityHub", "TuanjieHub"] {
-        let config_path = appdata.join(config_dir).join("editors.json");
+    for vendor in crate::vendor::Vendor::all() {
+        let config_path = appdata.join(vendor.config_dir_name()).join("editors.json");
         if let Ok(content) = std::fs::read_to_string(&config_path) {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
                 extract_editor_paths(&value, &mut paths, &mut seen);

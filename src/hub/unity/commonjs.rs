@@ -1,9 +1,10 @@
-use super::PatchStrategy;
 use crate::hub::asar::{self, AsarArchive};
 use crate::hub::patcher::replace_fn_body;
+use crate::hub::payloads::{wrap_awaiter, wrap_naked_async};
+use crate::hub::strategy::PatchStrategy;
 use anyhow::Context;
 
-/// Patch strategy for CommonJS separate files format
+/// Patch strategy for Unity Hub CommonJS separate files format.
 ///
 /// Characteristics:
 /// - CommonJS format (`require()`, `module.exports`)
@@ -75,12 +76,8 @@ impl PatchStrategy for CommonJsStrategy {
 // ── Patch Functions for 3.5/3.7 ──────────────────────────────
 
 fn patch_license_service_js(content: &str) -> anyhow::Result<String> {
-    let new_body = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            return true;
-        });
-    }"#;
-    replace_fn_body(content, "isLicenseValid(", new_body).context("patch isLicenseValid failed")
+    let new_body = wrap_awaiter("            return true;");
+    replace_fn_body(content, "isLicenseValid(", &new_body).context("patch isLicenseValid failed")
 }
 
 fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
@@ -88,9 +85,8 @@ fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
     // reads: productName, entitlementGroupId, startDate, expirationDate,
     // updateDate, licenseType, validationErrors.
     // Missing entitlementGroupId → undefined.startsWith() crash in isEGL().
-    let new_body = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            return [{
+    let new_body = wrap_awaiter(
+        "            return [{
                 startDate: new Date('1970-01-01T00:00:00.000Z'),
                 expirationDate: new Date('9999-01-01T08:00:00.000Z'),
                 updateDate: new Date('2024-01-01T08:00:00.000Z'),
@@ -98,20 +94,15 @@ fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
                 licenseType: 'ULF',
                 entitlementGroupId: 'U4-Unifuck-pro-001',
                 validationErrors: [],
-            }];
-        });
-    }"#;
-    replace_fn_body(content, "getValidEntitlementGroups(", new_body)
+            }];",
+    );
+    replace_fn_body(content, "getValidEntitlementGroups(", &new_body)
         .context("patch getValidEntitlementGroups failed")
 }
 
 fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
-    let new_init = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            return true;
-        });
-    }"#;
-    let result = replace_fn_body(content, "init(externalCorrelationId", new_init)
+    let new_init = wrap_awaiter("            return true;");
+    let result = replace_fn_body(content, "init(externalCorrelationId", &new_init)
         .context("patch init(externalCorrelationId) failed")?;
 
     // Return a stub instead of null — editorapp.js calls
@@ -143,15 +134,16 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
 
 fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
     // 1. Replace isUserSignedIn() → return true (3.7+ only)
-    let new_signed_in = r#"{
-        return true;
-    }"#;
-    let after_signed_in = match replace_fn_body(content, "isUserSignedIn(", new_signed_in) {
+    let new_signed_in = wrap_naked_async("        return true;");
+    let after_signed_in = match replace_fn_body(content, "isUserSignedIn(", &new_signed_in) {
         Some(s) => s,
         None => content.to_string(),
     };
 
-    // 2. Replace constructor() — inject fake userInfo
+    // 2. Replace constructor() — inject fake userInfo.
+    // CommonJS adds an extra `identifier` field (not present in ESM/Tuanjie)
+    // and uses single-quoted strings, so we keep this block inline rather
+    // than reusing payloads::FAKE_USER_FIELDS.
     let new_constructor = r#"{
         super();
         this.userInfo = undefined;
@@ -186,9 +178,8 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
     };
 
     // 3. Replace restoreAuthState() — set loggedIn and broadcast events
-    let new_restore = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            this.connectInfo.ready = true;
+    let new_restore = wrap_awaiter(
+        "            this.connectInfo.ready = true;
             this.connectInfo.loggedIn = true;
             this.connectInfo.initialized = true;
             this.connectInfo.workOffline = true;
@@ -210,11 +201,65 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
             postal_1.default.publish({
                 channel: 'fsm.user',
                 topic: PostalTopic_1.default.LOGGED_IN,
-            });
-        });
-    }"#;
-    match replace_fn_body(&after_constructor, "restoreAuthState(", new_restore) {
+            });",
+    );
+    match replace_fn_body(&after_constructor, "restoreAuthState(", &new_restore) {
         Some(s) => Ok(s),
         None => Ok(after_constructor),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Guard byte-for-byte equivalence with the pre-refactor hardcoded body.
+    #[test]
+    fn license_service_is_license_valid_matches_legacy() {
+        let legacy = r#"{
+        return __awaiter(this, void 0, void 0, function* () {
+            return true;
+        });
+    }"#;
+        let built = wrap_awaiter("            return true;");
+        assert_eq!(built, legacy);
+    }
+
+    #[test]
+    fn license_core_entitlements_matches_legacy() {
+        let legacy = r#"{
+        return __awaiter(this, void 0, void 0, function* () {
+            return [{
+                startDate: new Date('1970-01-01T00:00:00.000Z'),
+                expirationDate: new Date('9999-01-01T08:00:00.000Z'),
+                updateDate: new Date('2024-01-01T08:00:00.000Z'),
+                productName: 'Unifuck Pro Max Ultra',
+                licenseType: 'ULF',
+                entitlementGroupId: 'U4-Unifuck-pro-001',
+                validationErrors: [],
+            }];
+        });
+    }"#;
+        let built = wrap_awaiter(
+            "            return [{
+                startDate: new Date('1970-01-01T00:00:00.000Z'),
+                expirationDate: new Date('9999-01-01T08:00:00.000Z'),
+                updateDate: new Date('2024-01-01T08:00:00.000Z'),
+                productName: 'Unifuck Pro Max Ultra',
+                licenseType: 'ULF',
+                entitlementGroupId: 'U4-Unifuck-pro-001',
+                validationErrors: [],
+            }];",
+        );
+        assert_eq!(built, legacy);
+    }
+
+    #[test]
+    fn auth_service_is_user_signed_in_matches_legacy() {
+        let legacy = r#"{
+        return true;
+    }"#;
+        let built = wrap_naked_async("        return true;");
+        assert_eq!(built, legacy);
     }
 }

@@ -1,9 +1,10 @@
-use super::PatchStrategy;
 use crate::hub::asar::{self, AsarArchive};
 use crate::hub::patcher::replace_fn_body;
+use crate::hub::payloads::{wrap_naked_async, FAKE_USER_FIELDS};
+use crate::hub::strategy::PatchStrategy;
 use anyhow::Context;
 
-/// Patch strategy for ESM bundled format
+/// Patch strategy for Unity Hub ESM bundled format.
 ///
 /// Characteristics:
 /// - ESM format (`import`/`export`)
@@ -63,43 +64,39 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
     let mut result = content.to_string();
 
     // 1. Patch isLicenseValid() → return true
-    let new_is_valid = r#"{
-        return true;
-    }"#;
-    result = replace_fn_body(&result, "isLicenseValid(", new_is_valid)
+    let new_is_valid = wrap_naked_async("        return true;");
+    result = replace_fn_body(&result, "isLicenseValid(", &new_is_valid)
         .context("patch isLicenseValid failed")?;
 
     // 2. Patch isUserSignedIn() → return true
     // In 3.18: checks `this.userInfo?.foreignKey`
-    let new_signed_in = r#"{
-        return true;
-    }"#;
-    result = replace_fn_body(&result, "isUserSignedIn(", new_signed_in)
+    let new_signed_in = wrap_naked_async("        return true;");
+    result = replace_fn_body(&result, "isUserSignedIn(", &new_signed_in)
         .context("patch isUserSignedIn failed")?;
 
     // 3. Patch getValidEntitlementGroups() → return fake Pro license
-    let new_entitlements = r#"{
-        return [{
+    let new_entitlements = wrap_naked_async(
+        "        return [{
             startDate: new Date('1970-01-01T00:00:00.000Z'),
             expirationDate: new Date('9999-01-01T08:00:00.000Z'),
             productName: 'Unifuck Pro Max Ultra',
             licenseType: 'ULF',
-        }];
-    }"#;
-    result = replace_fn_body(&result, "getValidEntitlementGroups(", new_entitlements)
+        }];",
+    );
+    result = replace_fn_body(&result, "getValidEntitlementGroups(", &new_entitlements)
         .context("patch getValidEntitlementGroups failed")?;
 
     // 4. Patch constructor() — inject fake userInfo
     // In 3.18, constructor has many DI params: (loggerFactory, windowActions, runtimePowerMonitor, gitCredentialManager, tokenManager)
-    let new_constructor = r#"{
-        super();
-        this.#logger = loggerFactory.createLogger("AuthService");
+    let new_constructor = wrap_naked_async(&format!(
+        "        super();
+        this.#logger = loggerFactory.createLogger(\"AuthService\");
         this.#windowActions = windowActions;
         this.#runtimePowerMonitor = runtimePowerMonitor;
         this.#gitCredentialManager = gitCredentialManager;
         this.#tokenManager = tokenManager;
-        this.codeVerifier = "";
-        this.connectInfo = {
+        this.codeVerifier = \"\";
+        this.connectInfo = {{
             error: false,
             initialized: false,
             loggedIn: false,
@@ -108,57 +105,51 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
             ready: false,
             showLoginWindow: false,
             workOffline: false
-        };
+        }};
         this.tokenRefreshTimer = null;
         this.userInfoRefreshTimer = null;
-        this.userInfo = {
-            foreignKey: "unifuck-fk",
-            name: "Unifuck",
-            email: "bypass@local",
-            primaryOrg: "local",
-            createdAt: "1970-01-01T00:00:00.000Z",
-        };
-    }"#;
+        this.userInfo = {{
+{FAKE_USER_FIELDS}
+        }};"
+    ));
     result = replace_fn_body(
         &result,
         "constructor(loggerFactory, windowActions, runtimePowerMonitor",
-        new_constructor,
+        &new_constructor,
     )
     .context("patch constructor failed")?;
 
     // 5. Patch restoreAuthState() — set loggedIn and broadcast events
     // In 3.18: uses mainContainer.get(IEventBroadcasterId).broadcast() and getChannel("app").publish()
-    let new_restore = r#"{
-        this.connectInfo.ready = true;
+    let new_restore = wrap_naked_async(
+        "        this.connectInfo.ready = true;
         this.connectInfo.loggedIn = true;
         this.connectInfo.initialized = true;
         this.connectInfo.workOffline = true;
         this.connectInfo.online = false;
         this.userOrgs = null;
         mainContainer.get(IEventBroadcasterId).broadcast(POSTAL_TOPICS.CONNECT_INFO_CHANGED, this.connectInfo);
-        getChannel("app").publish(POSTAL_TOPICS.CONNECT_INFO_CHANGED, { connectInfo: this.connectInfo });
-        getChannel("app").publish(POSTAL_TOPICS.USER_INFO_CHANGED, { userInfo: this.getFormattedUserInfo() });
-        getChannel("fsm.user").publish(POSTAL_TOPICS.LOGGED_IN);
-    }"#;
-    result = replace_fn_body(&result, "restoreAuthState(", new_restore)
+        getChannel(\"app\").publish(POSTAL_TOPICS.CONNECT_INFO_CHANGED, { connectInfo: this.connectInfo });
+        getChannel(\"app\").publish(POSTAL_TOPICS.USER_INFO_CHANGED, { userInfo: this.getFormattedUserInfo() });
+        getChannel(\"fsm.user\").publish(POSTAL_TOPICS.LOGGED_IN);",
+    );
+    result = replace_fn_body(&result, "restoreAuthState(", &new_restore)
         .context("patch restoreAuthState failed")?;
 
     // 6. Patch getInstance() on LicensingSdk → return null
     // This prevents the actual licensing SDK from being used
-    let new_get_instance = r#"{
-        return null;
-    }"#;
-    result = replace_fn_body(&result, "getInstance(", new_get_instance)
+    let new_get_instance = wrap_naked_async("        return null;");
+    result = replace_fn_body(&result, "getInstance(", &new_get_instance)
         .context("patch getInstance failed")?;
 
     // 7. Patch fetchVariants() to skip network call in airgapped environments
     // FeatureFlagsService.fetchVariants() makes HTTP request to Amplitude Experiment API
     // which times out in airgapped/intranet-only environments (15s timeout + retries = minutes)
-    let new_fetch_variants = r#"{
-        this.#logger.info("Fetching feature flags (skipped - offline mode)");
+    let new_fetch_variants = wrap_naked_async(
+        "        this.#logger.info(\"Fetching feature flags (skipped - offline mode)\");
         const user = await this.getExperimentUser();
         if (!user.user_id && !user.device_id) {
-            this.#logger.info("User info and licensing info not complete, skipping fetching feature flags for now.");
+            this.#logger.info(\"User info and licensing info not complete, skipping fetching feature flags for now.\");
             return;
         }
         // Use cached variants only, skip network call
@@ -168,28 +159,28 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
                 previous: this.variants,
                 next: cachedAmplitudeVariants
             });
-            this.#logger.info("Using cached feature flags");
-        }
-    }"#;
-    result = replace_fn_body(&result, "fetchVariants(", new_fetch_variants)
+            this.#logger.info(\"Using cached feature flags\");
+        }",
+    );
+    result = replace_fn_body(&result, "fetchVariants(", &new_fetch_variants)
         .context("patch fetchVariants failed")?;
 
     // 8. Patch AuthService.getOrganizations() to return empty array (prevent hanging in airgapped environments)
     // AuthService.getOrganizations() calls cloudCore.getOrganizations() which makes axios call without timeout
     // In airgapped environments, this hangs waiting for TCP connection timeout (~18 seconds)
-    let new_get_organizations = r#"{
-        this.#logger.debug("Organization data has been requested from AuthService");
-        if (!this.connectInfo.loggedIn) throw new Error("User is not logged in");
+    let new_get_organizations = wrap_naked_async(
+        "        this.#logger.debug(\"Organization data has been requested from AuthService\");
+        if (!this.connectInfo.loggedIn) throw new Error(\"User is not logged in\");
         if (this.userOrgs !== null) {
-            this.#logger.debug("Returning cached userOrg data");
+            this.#logger.debug(\"Returning cached userOrg data\");
             return this.userOrgs;
         }
         // Skip network call in airgapped environments, return empty array
-        this.#logger.debug("Returning empty organization list (offline mode)");
+        this.#logger.debug(\"Returning empty organization list (offline mode)\");
         this.userOrgs = [];
-        return this.userOrgs;
-    }"#;
-    result = replace_fn_body(&result, "getOrganizations(", new_get_organizations)
+        return this.userOrgs;",
+    );
+    result = replace_fn_body(&result, "getOrganizations(", &new_get_organizations)
         .context("patch getOrganizations failed")?;
 
     Ok(result)
@@ -356,5 +347,65 @@ class CloudCoreApiClient {
         assert!(bundle_name.ends_with(".js"), "Bundle should be a .js file");
 
         eprintln!("✓ Found bundle: {}", bundle_name);
+    }
+
+    /// Verify the new `wrap_naked_async` + inline-userInfo emit byte-identical
+    /// output to the legacy hardcoded constructor body. Guards against drift
+    /// during refactors.
+    #[test]
+    fn esm_constructor_body_matches_legacy() {
+        let legacy = r#"{
+        super();
+        this.#logger = loggerFactory.createLogger("AuthService");
+        this.#windowActions = windowActions;
+        this.#runtimePowerMonitor = runtimePowerMonitor;
+        this.#gitCredentialManager = gitCredentialManager;
+        this.#tokenManager = tokenManager;
+        this.codeVerifier = "";
+        this.connectInfo = {
+            error: false,
+            initialized: false,
+            loggedIn: false,
+            maintenance: false,
+            online: true,
+            ready: false,
+            showLoginWindow: false,
+            workOffline: false
+        };
+        this.tokenRefreshTimer = null;
+        this.userInfoRefreshTimer = null;
+        this.userInfo = {
+            foreignKey: "unifuck-fk",
+            name: "Unifuck",
+            email: "bypass@local",
+            primaryOrg: "local",
+            createdAt: "1970-01-01T00:00:00.000Z",
+        };
+    }"#;
+        let built = wrap_naked_async(&format!(
+            "        super();
+        this.#logger = loggerFactory.createLogger(\"AuthService\");
+        this.#windowActions = windowActions;
+        this.#runtimePowerMonitor = runtimePowerMonitor;
+        this.#gitCredentialManager = gitCredentialManager;
+        this.#tokenManager = tokenManager;
+        this.codeVerifier = \"\";
+        this.connectInfo = {{
+            error: false,
+            initialized: false,
+            loggedIn: false,
+            maintenance: false,
+            online: true,
+            ready: false,
+            showLoginWindow: false,
+            workOffline: false
+        }};
+        this.tokenRefreshTimer = null;
+        this.userInfoRefreshTimer = null;
+        this.userInfo = {{
+{FAKE_USER_FIELDS}
+        }};"
+        ));
+        assert_eq!(built, legacy);
     }
 }

@@ -1,10 +1,10 @@
-use crate::core::{self, UnityInstall};
+use crate::core::{self, EditorInstall};
 use crate::hub::{self, HubInfo};
 use slint::{ModelRc, VecModel};
 use std::sync::mpsc;
 
 pub struct AppState {
-    pub installs: Vec<UnityInstall>,
+    pub installs: Vec<EditorInstall>,
     pub hubs: Vec<HubInfo>,
     pub hub_patched: Vec<bool>,
     pub hub_selected: Vec<bool>,
@@ -30,10 +30,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         let installs = core::scan_installations();
-        let patched: Vec<bool> = installs
-            .iter()
-            .map(|i| core::is_patched(&i.dll_path))
-            .collect();
+        let patched: Vec<bool> = installs.iter().map(core::is_patched).collect();
         let selected = vec![false; installs.len()];
         let hubs = hub::find_hubs();
         let hub_patched: Vec<bool> = hubs
@@ -94,11 +91,7 @@ impl AppState {
 
     /// 重新扫描 patched 状态 (基于 .bak 是否存在)
     pub fn refresh_patched(&mut self) {
-        self.patched = self
-            .installs
-            .iter()
-            .map(|i| core::is_patched(&i.dll_path))
-            .collect();
+        self.patched = self.installs.iter().map(core::is_patched).collect();
         self.hub_patched = self
             .hubs
             .iter()
@@ -188,7 +181,7 @@ pub fn sync_ui(window: &super::AppWindow, state: &AppState) {
             None => false,
         };
         items.push(super::InstallItem {
-            version: format!("{} Editor {}", i.display_name, i.version).into(),
+            version: format!("{} Editor {}", i.vendor.display_name(), i.version).into(),
             path: i.dll_path.display().to_string().into(),
             status: (if p { "PATCHED" } else { "UNPATCHED" }).into(),
             st_color: if p {
