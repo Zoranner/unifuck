@@ -128,7 +128,7 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                     "{} selected, {} succeeded, {} failed",
                     total, app.success_count, app.error_count
                 );
-                let err_info = truncate_error(&app.first_error, 40);
+                let err_info = truncate_error(&app.first_error, 80);
                 format!("{}\n{}", summary, err_info).into()
             } else {
                 // 全部失败
@@ -136,7 +136,7 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                     "{} selected, 0 succeeded, {} failed",
                     total, app.error_count
                 );
-                let err_info = truncate_error(&app.first_error, 40);
+                let err_info = truncate_error(&app.first_error, 80);
                 format!("{}\n{}", summary, err_info).into()
             };
 
