@@ -73,7 +73,6 @@ pub(crate) fn write_asar(
         };
 
         let size = content.len() as u64;
-        let integrity = compute_integrity(&content);
         new_data.extend_from_slice(&content);
 
         let segments: Vec<&str> = entry_path.split('/').collect();
@@ -89,7 +88,11 @@ pub(crate) fn write_asar(
         {
             obj.insert("offset".into(), json!(offset.to_string()));
             obj.insert("size".into(), json!(size));
-            obj.insert("integrity".into(), integrity);
+            // Only update integrity for modified files to avoid header bloat
+            if mod_set.contains_key(entry_path.as_str()) {
+                let integrity = compute_integrity(&content);
+                obj.insert("integrity".into(), integrity);
+            }
         }
 
         offset += size;
