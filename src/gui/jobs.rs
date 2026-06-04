@@ -2,6 +2,8 @@ use crate::core;
 use crate::core::EditorInstall;
 use crate::gui::app::AppState;
 use crate::hub::{self, HubInfo};
+use crate::vendor::Vendor;
+use std::collections::HashSet;
 use std::sync::mpsc;
 use std::thread;
 
@@ -152,25 +154,45 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
     if !ok {
         tx.send("ERR no target patched successfully".into()).ok();
     } else {
-        deploy_license_and_hosts(&tx);
+        deploy_license_and_hosts(&tx, &targets);
         tx.send("OK  patch complete".into()).ok();
     }
     tx.send(String::new()).ok();
 }
 
-fn deploy_license_and_hosts(tx: &mpsc::Sender<String>) {
-    tx.send("..  generating license...".into()).ok();
-    match core::sign_license() {
-        Ok(xml) => match core::deploy_license(&xml) {
-            Ok(()) => {
-                tx.send("OK  license deployed".into()).ok();
-            }
+fn vendors_touched(targets: &JobTargets) -> Vec<Vendor> {
+    let mut set: HashSet<Vendor> = HashSet::new();
+    for inst in &targets.selected {
+        set.insert(inst.vendor);
+    }
+    for (idx, hub) in targets.hubs.iter().enumerate() {
+        if *targets.hub_selected.get(idx).unwrap_or(&false) {
+            set.insert(hub.vendor);
+        }
+    }
+    Vendor::all()
+        .iter()
+        .copied()
+        .filter(|v| set.contains(v))
+        .collect()
+}
+
+fn deploy_license_and_hosts(tx: &mpsc::Sender<String>, targets: &JobTargets) {
+    for vendor in vendors_touched(targets) {
+        let v = vendor.display_name();
+        tx.send(format!("..  generating {} license...", v)).ok();
+        match core::sign_license(vendor) {
+            Ok(xml) => match core::deploy_license(vendor, &xml) {
+                Ok(()) => {
+                    tx.send(format!("OK  {} license deployed", v)).ok();
+                }
+                Err(e) => {
+                    tx.send(format!("ERR deploy {} license: {}", v, e)).ok();
+                }
+            },
             Err(e) => {
-                tx.send(format!("ERR deploy: {}", e)).ok();
+                tx.send(format!("ERR sign {} license: {}", v, e)).ok();
             }
-        },
-        Err(e) => {
-            tx.send(format!("ERR sign: {}", e)).ok();
         }
     }
     tx.send("..  writing hosts...".into()).ok();
@@ -251,27 +273,38 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
 }
 
 fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &JobTargets) {
-    let any_editor_left = targets.all_installs.iter().any(core::is_patched)
-        || targets
+    let shared_left = core::is_shared_licensing_client_patched();
+    let mut anything_left = shared_left;
+
+    for vendor in Vendor::all().iter().copied() {
+        let editor_left = targets
             .all_installs
             .iter()
-            .any(|i| core::is_exe_patched(&i.exe_path))
-        || core::is_shared_licensing_client_patched();
-    let any_hub_left = targets
-        .hubs
-        .iter()
-        .any(|h| hub::is_hub_patched(&h.asar_path));
+            .filter(|i| i.vendor == vendor)
+            .any(|i| core::is_patched(i) || core::is_exe_patched(&i.exe_path));
+        let hub_left = targets
+            .hubs
+            .iter()
+            .filter(|h| h.vendor == vendor)
+            .any(|h| hub::is_hub_patched(&h.asar_path));
 
-    if !any_editor_left && !any_hub_left {
-        tx.send("..  removing license...".into()).ok();
-        match core::remove_license() {
-            Ok(()) => {
-                tx.send("OK  license removed".into()).ok();
+        if !editor_left && !hub_left {
+            let v = vendor.display_name();
+            tx.send(format!("..  removing {} license...", v)).ok();
+            match core::remove_license(vendor) {
+                Ok(()) => {
+                    tx.send(format!("OK  {} license removed", v)).ok();
+                }
+                Err(e) => {
+                    tx.send(format!("ERR remove {} license: {}", v, e)).ok();
+                }
             }
-            Err(e) => {
-                tx.send(format!("ERR remove license: {}", e)).ok();
-            }
+        } else {
+            anything_left = true;
         }
+    }
+
+    if !anything_left {
         tx.send("..  cleaning hosts...".into()).ok();
         match core::clean_hosts() {
             Ok(()) => {
@@ -283,7 +316,7 @@ fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &Job
             }
         }
     } else {
-        tx.send("OK  other patched targets remain, keeping license and hosts".into())
+        tx.send("OK  other patched targets remain, keeping hosts".into())
             .ok();
     }
 }

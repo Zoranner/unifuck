@@ -6,14 +6,13 @@ use rsa::signature::{SignatureEncoding, Signer};
 use sha1::{Digest, Sha1};
 use std::path::Path;
 
-const PRIV_KEY_PEM: &str = include_str!("../../keys/mod/priv.key");
-const LICENSE_XML: &str = include_str!("../../license.xml");
-const LICENSE_DIR: &str = r"C:\ProgramData\Unity";
-const LICENSE_FILE: &str = "Unity_lic.ulf";
+use crate::vendor::Vendor;
 
-pub fn sign_license() -> anyhow::Result<String> {
-    let key =
-        rsa::RsaPrivateKey::from_pkcs1_pem(PRIV_KEY_PEM).context("parse private key failed")?;
+const LICENSE_XML: &str = include_str!("../../license.xml");
+
+pub fn sign_license(vendor: Vendor) -> anyhow::Result<String> {
+    let key = rsa::RsaPrivateKey::from_pkcs1_pem(vendor.priv_key_pem())
+        .with_context(|| format!("parse {} private key failed", vendor.display_name()))?;
     let signing_key = SigningKey::<Sha1>::new(key);
 
     let mut xml = LICENSE_XML.to_string();
@@ -37,22 +36,47 @@ pub fn sign_license() -> anyhow::Result<String> {
     Ok(xml)
 }
 
-pub fn deploy_license(xml: &str) -> anyhow::Result<()> {
-    let dir = Path::new(LICENSE_DIR);
+pub fn deploy_license(vendor: Vendor, xml: &str) -> anyhow::Result<()> {
+    let dir = Path::new(vendor.license_dir());
     std::fs::create_dir_all(dir).with_context(|| format!("mkdir failed: {}", dir.display()))?;
 
-    let path = dir.join(LICENSE_FILE);
+    let path = dir.join(vendor.license_filename());
     std::fs::write(&path, xml).with_context(|| format!("write failed: {}", path.display()))?;
 
     Ok(())
 }
 
-pub fn remove_license() -> anyhow::Result<()> {
-    let path = Path::new(LICENSE_DIR).join(LICENSE_FILE);
+pub fn remove_license(vendor: Vendor) -> anyhow::Result<()> {
+    let path = Path::new(vendor.license_dir()).join(vendor.license_filename());
     if !path.exists() {
         return Ok(());
     }
     std::fs::remove_file(&path)
         .with_context(|| format!("remove license failed: {}", path.display()))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Smoke test: each vendor's embedded priv.key must be PKCS#1-parseable
+    /// and produce a signed license XML containing populated DigestValue and
+    /// SignatureValue elements. Catches OpenSSL PKCS#8 default leaking into
+    /// keys/<vendor>/mod/priv.key.
+    #[test]
+    fn sign_license_succeeds_for_every_vendor() {
+        for vendor in Vendor::all().iter().copied() {
+            let xml = sign_license(vendor)
+                .unwrap_or_else(|e| panic!("sign_license({:?}) failed: {}", vendor, e));
+            assert!(
+                xml.contains("<DigestValue>")
+                    && !xml.contains("<DigestValue/>")
+                    && xml.contains("<SignatureValue>")
+                    && !xml.contains("<SignatureValue/>"),
+                "{:?} signed XML missing digest or signature population",
+                vendor
+            );
+        }
+    }
 }

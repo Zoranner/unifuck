@@ -75,4 +75,28 @@ impl Vendor {
     pub fn all() -> &'static [Vendor] {
         &[Vendor::Unity, Vendor::Tuanjie]
     }
+
+    /// Editor 读取 license 文件的目录 (`C:\ProgramData\<Vendor>`)。
+    pub fn license_dir(self) -> &'static str {
+        match self {
+            Vendor::Unity => r"C:\ProgramData\Unity",
+            Vendor::Tuanjie => r"C:\ProgramData\Tuanjie",
+        }
+    }
+
+    /// License 文件名 (`<Vendor>_lic.ulf`)。
+    pub fn license_filename(self) -> &'static str {
+        match self {
+            Vendor::Unity => "Unity_lic.ulf",
+            Vendor::Tuanjie => "Tuanjie_lic.ulf",
+        }
+    }
+
+    /// 签 license 用的 RSA 私钥 PEM (从 keys/<vendor>/mod/priv.key 嵌入)。
+    pub fn priv_key_pem(self) -> &'static str {
+        match self {
+            Vendor::Unity => include_str!("../keys/mod/priv.key"),
+            Vendor::Tuanjie => include_str!("../keys/tuanjie/mod/priv.key"),
+        }
+    }
 }
