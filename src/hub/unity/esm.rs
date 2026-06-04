@@ -79,7 +79,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
         "        return [{
             startDate: new Date('1970-01-01T00:00:00.000Z'),
             expirationDate: new Date('9999-01-01T08:00:00.000Z'),
-            productName: 'Unifuck Pro Max Ultra',
+            productName: 'Pro Max Ultra',
             licenseType: 'ULF',
         }];",
     );

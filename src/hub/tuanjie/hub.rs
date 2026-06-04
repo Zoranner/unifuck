@@ -134,7 +134,7 @@ fn patch_license_service_js(content: &str) -> anyhow::Result<String> {
                 startDate: new Date('1970-01-01T00:00:00.000Z'),
                 expirationDate: new Date('9999-01-01T08:00:00.000Z'),
                 updateDate: new Date('2024-01-01T08:00:00.000Z'),
-                productName: 'Unifuck Pro Max Ultra',
+                productName: 'Pro Max Ultra',
                 licenseType: 'ULF',
                 entitlementGroupId: 'U4-Unifuck-pro-001',
                 validationErrors: [],
