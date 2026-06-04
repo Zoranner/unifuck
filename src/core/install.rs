@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use super::{base64_lines, MOD_CERT_PEM};
@@ -9,9 +10,6 @@ const EDITOR_EXE_SUBPATH: &str = r"Editor\Unity.exe";
 const TUANJIE_LICENSING_DLL_SUBPATH: &str =
     r"Editor\Data\Resources\Licensing\Client\Tuanjie.Licensing.EntitlementResolver.dll";
 const TUANJIE_EDITOR_EXE_SUBPATH: &str = r"Editor\Tuanjie.exe";
-
-/// Program Files roots to scan for Editor installations (covers C: and D: drives).
-const PROGRAM_FILES_ROOTS: &[&str] = &[r"C:\Program Files", r"D:\Program Files"];
 
 #[derive(Clone)]
 pub struct UnityInstall {
@@ -43,6 +41,72 @@ pub fn is_patched(dll_path: &Path) -> bool {
     false
 }
 
+// ── Scan Helpers ───────────────────────────────────────────────
+
+/// Try adding a Unity or Tuanjie editor install at `root` to the list.
+/// Checks both Unity and Tuanjie DLL locations.
+fn add_if_valid_install(
+    root: &Path,
+    version: &str,
+    installs: &mut Vec<UnityInstall>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if let Some(install) = try_find_install(root, version) {
+        if seen.insert(install.dll_path.clone()) {
+            installs.push(install);
+        }
+    }
+    if let Some(install) = try_find_tuanjie_install(root, version) {
+        if seen.insert(install.dll_path.clone()) {
+            installs.push(install);
+        }
+    }
+}
+
+/// Scan a Program Files directory for standalone Unity/Tuanjie editor folders.
+fn scan_pf_for_editors(
+    pf_path: &Path,
+    installs: &mut Vec<UnityInstall>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if let Ok(dir) = std::fs::read_dir(pf_path) {
+        for entry in dir.flatten() {
+            let path = entry.path();
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            if path.is_dir() {
+                if let Some(version) = name.strip_prefix("Unity ") {
+                    add_if_valid_install(&path, version, installs, seen);
+                } else if let Some(version) = name.strip_prefix("Tuanjie ") {
+                    add_if_valid_install(&path, version, installs, seen);
+                }
+            }
+        }
+    }
+}
+
+/// Scan a Hub-managed Editor directory (e.g. `<Hub>\Editor\`) for version folders.
+fn scan_hub_editor_dir(
+    editor_dir: &Path,
+    installs: &mut Vec<UnityInstall>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if let Ok(dir) = std::fs::read_dir(editor_dir) {
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let version = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "UNKNOWN".to_string());
+                add_if_valid_install(&path, &version, installs, seen);
+            }
+        }
+    }
+}
+
 fn try_find_install(root: &Path, version: &str) -> Option<UnityInstall> {
     let dll_path = root.join(LICENSING_DLL_SUBPATH);
     if dll_path.exists() {
@@ -71,59 +135,28 @@ fn try_find_tuanjie_install(root: &Path, version: &str) -> Option<UnityInstall> 
 
 pub fn scan_installations() -> Vec<UnityInstall> {
     let mut installs = Vec::new();
+    let mut seen = HashSet::new();
 
-    // Scan standalone installations under each Program Files root
-    for pf_root in PROGRAM_FILES_ROOTS {
-        let pf_path = Path::new(pf_root);
-        if let Ok(dir) = std::fs::read_dir(pf_path) {
-            for entry in dir.flatten() {
-                let path = entry.path();
-                let name = path
-                    .file_name()
-                    .map(|n| n.to_string_lossy().to_string())
-                    .unwrap_or_default();
-                if path.is_dir() {
-                    if let Some(version) = name.strip_prefix("Unity ") {
-                        if let Some(install) = try_find_install(&path, version) {
-                            installs.push(install);
-                        }
-                    } else if let Some(version) = name.strip_prefix("Tuanjie ") {
-                        if let Some(install) = try_find_tuanjie_install(&path, version) {
-                            installs.push(install);
-                        }
-                    }
-                }
-            }
+    // 1. Standalone: scan Program Files on all drives
+    for pf in crate::discovery::program_files_dirs() {
+        scan_pf_for_editors(&pf, &mut installs, &mut seen);
+    }
+
+    // 2. Hub-managed: derive from discovered Hub roots
+    for hub_name in ["Unity Hub", "Tuanjie Hub"] {
+        for hub_root in crate::discovery::find_hub_roots(hub_name) {
+            let editor_dir = hub_root.join("Editor");
+            scan_hub_editor_dir(&editor_dir, &mut installs, &mut seen);
         }
     }
 
-    // Scan Hub-managed Editor installations under each Program Files root
-    for pf_root in PROGRAM_FILES_ROOTS {
-        let hub_editor_dirs: &[(String, bool)] = &[
-            (format!(r"{}\Unity Hub\Editor", pf_root), false),
-            (format!(r"{}\Tuanjie Hub\Editor", pf_root), true),
-        ];
-        for (hub_editor_dir, is_tuanjie) in hub_editor_dirs {
-            if let Ok(hub_dir) = std::fs::read_dir(hub_editor_dir) {
-                for entry in hub_dir.flatten() {
-                    let path = entry.path();
-                    if path.is_dir() {
-                        let version = path
-                            .file_name()
-                            .map(|n| n.to_string_lossy().to_string())
-                            .unwrap_or_else(|| "UNKNOWN".to_string());
-                        let install = if *is_tuanjie {
-                            try_find_tuanjie_install(&path, &version)
-                        } else {
-                            try_find_install(&path, &version)
-                        };
-                        if let Some(install) = install {
-                            installs.push(install);
-                        }
-                    }
-                }
-            }
-        }
+    // 3. Custom paths from editors.json
+    for editor_path in crate::discovery::read_editor_paths_from_config() {
+        let version = editor_path
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| "UNKNOWN".to_string());
+        add_if_valid_install(&editor_path, &version, &mut installs, &mut seen);
     }
 
     installs.sort_by(|a, b| b.version.cmp(&a.version));

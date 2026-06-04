@@ -21,26 +21,14 @@ pub(crate) struct HubInfo {
 // ── Hub Detection ──────────────────────────────────────────────
 
 pub(crate) fn find_hub() -> Option<HubInfo> {
-    let candidates = vec![
-        PathBuf::from(r"C:\Program Files\Unity Hub"),
-        PathBuf::from(r"D:\Program Files\Unity Hub"),
-        PathBuf::from(r"C:\Program Files\Tuanjie Hub"),
-        PathBuf::from(r"D:\Program Files\Tuanjie Hub"),
-    ];
-
-    for path in candidates {
-        let asar = path.join(HUB_ASAR_REL);
-        if asar.exists() {
-            if let Some(info) = hub_info_from_path(&path, &asar) {
+    // Try Unity Hub first (registry then Program Files on all drives),
+    // then Tuanjie Hub with the same strategy.
+    for hub_name in ["Unity Hub", "Tuanjie Hub"] {
+        for hub_root in crate::discovery::find_hub_roots(hub_name) {
+            let asar = hub_root.join(HUB_ASAR_REL);
+            if let Some(info) = hub_info_from_path(&hub_root, &asar) {
                 return Some(info);
             }
-        }
-    }
-
-    if let Some(path) = hub_path_from_registry() {
-        let asar = path.join(HUB_ASAR_REL);
-        if asar.exists() {
-            return hub_info_from_path(&path, &asar);
         }
     }
 
@@ -87,77 +75,6 @@ fn read_hub_version(hub_path: &Path, asar_path: &Path) -> Option<String> {
 fn extract_version_from_json_str(s: &str) -> Option<String> {
     let v: Value = serde_json::from_str(s).ok()?;
     v.get("version")?.as_str().map(|s| s.to_string())
-}
-
-// ── Registry Lookup ────────────────────────────────────────────
-
-#[cfg(windows)]
-fn hub_path_from_registry() -> Option<PathBuf> {
-    // 优先查找 Unity Hub，找不到再尝试 Tuanjie Hub
-    query_registry_path(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Unity Hub").or_else(
-        || query_registry_path(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Tuanjie Hub"),
-    )
-}
-
-#[cfg(windows)]
-fn query_registry_path(key_path: &str) -> Option<PathBuf> {
-    use std::ffi::OsStr;
-    use std::os::windows::ffi::OsStrExt;
-    use windows_sys::Win32::System::Registry::*;
-
-    unsafe {
-        let key_path_wide: Vec<u16> = OsStr::new(key_path)
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
-
-        let mut hkey: HKEY = std::ptr::null_mut();
-        if RegOpenKeyExW(
-            HKEY_LOCAL_MACHINE,
-            key_path_wide.as_ptr(),
-            0,
-            KEY_READ,
-            &mut hkey,
-        ) != 0
-        {
-            return None;
-        }
-
-        let value_name: Vec<u16> = OsStr::new("InstallLocation")
-            .encode_wide()
-            .chain(std::iter::once(0))
-            .collect();
-
-        let mut buf = vec![0u8; 1024];
-        let mut size = buf.len() as u32;
-        let mut kind = 0u32;
-
-        let result = RegQueryValueExW(
-            hkey,
-            value_name.as_ptr(),
-            std::ptr::null_mut(),
-            &mut kind,
-            buf.as_mut_ptr(),
-            &mut size,
-        );
-
-        RegCloseKey(hkey);
-
-        if result != 0 || (kind != REG_SZ && kind != REG_EXPAND_SZ) {
-            return None;
-        }
-
-        let wide: &[u16] =
-            std::slice::from_raw_parts(buf.as_ptr() as *const u16, size as usize / 2);
-        let len = wide.iter().position(|&c| c == 0).unwrap_or(wide.len());
-        let path = String::from_utf16_lossy(&wide[..len]);
-        Some(PathBuf::from(path.trim()))
-    }
-}
-
-#[cfg(not(windows))]
-fn hub_path_from_registry() -> Option<PathBuf> {
-    None
 }
 
 // ── Main Patch / Unpatch ───────────────────────────────────────
