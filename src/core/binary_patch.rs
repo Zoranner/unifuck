@@ -9,9 +9,22 @@ const TUANJIE_ORIG_CERT_PEM: &str =
     include_str!("../../keys/tuanjie/orig/Tuanjie.Licensing.EntitlementResolver.Tuanjie.pem");
 const TUANJIE_MOD_CERT_PEM: &str =
     include_str!("../../keys/tuanjie/mod/Tuanjie.Licensing.EntitlementResolver.Tuanjie.pem");
-const SHARED_LICENSING_CLIENT_DIR: &str = r"C:\Program Files\Unity Hub\UnityLicensingClient_V1";
-const TUANJIE_SHARED_LICENSING_CLIENT_DIR: &str =
-    r"C:\Program Files\Tuanjie Hub\TuanjieLicensingClient_V1";
+
+/// Candidate paths for the Unity shared licensing client directory (C: and D: drives).
+fn shared_licensing_client_candidates() -> &'static [&'static str] {
+    &[
+        r"C:\Program Files\Unity Hub\UnityLicensingClient_V1",
+        r"D:\Program Files\Unity Hub\UnityLicensingClient_V1",
+    ]
+}
+
+/// Candidate paths for the Tuanjie shared licensing client directory (C: and D: drives).
+fn tuanjie_shared_licensing_client_candidates() -> &'static [&'static str] {
+    &[
+        r"C:\Program Files\Tuanjie Hub\TuanjieLicensingClient_V1",
+        r"D:\Program Files\Tuanjie Hub\TuanjieLicensingClient_V1",
+    ]
+}
 
 /// 将 ASCII/UTF-8 字符串转换为 UTF-16LE 字节序列。
 fn to_utf16le(s: &str) -> Vec<u8> {
@@ -279,29 +292,33 @@ pub fn is_exe_patched(exe_path: &Path) -> bool {
 /// 补丁 Hub 安装的全局共享 Licensing Client DLL。
 ///
 /// Unity 2021 Editor 通过 IPC 连接到此共享客户端 (位于
-/// `C:\Program Files\Unity Hub\UnityLicensingClient_V1\Unity.Licensing.EntitlementResolver.dll`)
+/// `<Program Files>\Unity Hub\UnityLicensingClient_V1\Unity.Licensing.EntitlementResolver.dll`)
 /// 进行 ULF 许可证签名验证; 内含与 Editor DLL 相同的原始证书。
 /// 若仅补丁 Editor 本地副本而未补丁此共享客户端, 2021 Editor 会报
 /// "digital signature is invalid"。
+///
+/// 自动扫描 C: 和 D: 盘的 Program Files 目录。
 ///
 /// 跳过条件 (返回 Ok):
 /// - Hub 未安装 (目录或 DLL 不存在)
 /// - 已存在 `.dll.bak` 备份 (说明已补丁过)
 /// - DLL 中未发现原始证书
 pub fn patch_shared_licensing_client() -> anyhow::Result<()> {
-    // Unity shared client
-    let dll_path =
-        Path::new(SHARED_LICENSING_CLIENT_DIR).join("Unity.Licensing.EntitlementResolver.dll");
-    patch_binary_file(&dll_path, true, 0, true)?;
+    // Unity shared client — try all candidate paths
+    for dir in shared_licensing_client_candidates() {
+        let dll_path = Path::new(dir).join("Unity.Licensing.EntitlementResolver.dll");
+        patch_binary_file(&dll_path, true, 0, true)?;
+    }
 
     // Tuanjie shared client (same UTF-16LE PEM replacement as Editor DLL)
-    let tuanjie_dll = Path::new(TUANJIE_SHARED_LICENSING_CLIENT_DIR)
-        .join("Tuanjie.Licensing.EntitlementResolver.dll");
-    if tuanjie_dll.exists() {
-        let bak = tuanjie_dll.with_extension("dll.bak");
-        if !bak.exists() {
-            if let Err(e) = patch_tuanjie_dll(&tuanjie_dll) {
-                eprintln!("warning: Tuanjie shared client patch failed: {}", e);
+    for dir in tuanjie_shared_licensing_client_candidates() {
+        let tuanjie_dll = Path::new(dir).join("Tuanjie.Licensing.EntitlementResolver.dll");
+        if tuanjie_dll.exists() {
+            let bak = tuanjie_dll.with_extension("dll.bak");
+            if !bak.exists() {
+                if let Err(e) = patch_tuanjie_dll(&tuanjie_dll) {
+                    eprintln!("warning: Tuanjie shared client patch failed: {}", e);
+                }
             }
         }
     }
@@ -311,32 +328,43 @@ pub fn patch_shared_licensing_client() -> anyhow::Result<()> {
 
 /// 还原 Hub 安装的全局共享 Licensing Client DLL 至原始状态。
 ///
+/// 自动扫描 C: 和 D: 盘的 Program Files 目录。
 /// 若从未补丁过 (.dll.bak 不存在), 静默成功。
 pub fn unpatch_shared_licensing_client() -> anyhow::Result<()> {
-    // Unity shared client
-    let dll_path =
-        Path::new(SHARED_LICENSING_CLIENT_DIR).join("Unity.Licensing.EntitlementResolver.dll");
-    restore_from_backup(&dll_path)?;
+    // Unity shared client — try all candidate paths
+    for dir in shared_licensing_client_candidates() {
+        let dll_path = Path::new(dir).join("Unity.Licensing.EntitlementResolver.dll");
+        restore_from_backup(&dll_path)?;
+    }
 
     // Tuanjie shared client
-    let tuanjie_dll = Path::new(TUANJIE_SHARED_LICENSING_CLIENT_DIR)
-        .join("Tuanjie.Licensing.EntitlementResolver.dll");
-    restore_from_backup(&tuanjie_dll)?;
+    for dir in tuanjie_shared_licensing_client_candidates() {
+        let tuanjie_dll = Path::new(dir).join("Tuanjie.Licensing.EntitlementResolver.dll");
+        restore_from_backup(&tuanjie_dll)?;
+    }
 
     Ok(())
 }
 
 /// 检查 Hub 安装的全局共享 Licensing Client DLL 是否处于已补丁状态。
+///
+/// 扫描 C: 和 D: 盘的 Program Files 目录; 任一位置存在备份即视为已补丁。
 pub fn is_shared_licensing_client_patched() -> bool {
     // Unity shared client
-    let dll_path =
-        Path::new(SHARED_LICENSING_CLIENT_DIR).join("Unity.Licensing.EntitlementResolver.dll");
-    if dll_path.with_extension("dll.bak").exists() {
-        return true;
+    for dir in shared_licensing_client_candidates() {
+        let dll_path = Path::new(dir).join("Unity.Licensing.EntitlementResolver.dll");
+        if dll_path.with_extension("dll.bak").exists() {
+            return true;
+        }
     }
 
     // Tuanjie shared client
-    let tuanjie_dll = Path::new(TUANJIE_SHARED_LICENSING_CLIENT_DIR)
-        .join("Tuanjie.Licensing.EntitlementResolver.dll");
-    tuanjie_dll.with_extension("dll.bak").exists()
+    for dir in tuanjie_shared_licensing_client_candidates() {
+        let tuanjie_dll = Path::new(dir).join("Tuanjie.Licensing.EntitlementResolver.dll");
+        if tuanjie_dll.with_extension("dll.bak").exists() {
+            return true;
+        }
+    }
+
+    false
 }

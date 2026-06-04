@@ -10,6 +10,9 @@ const TUANJIE_LICENSING_DLL_SUBPATH: &str =
     r"Editor\Data\Resources\Licensing\Client\Tuanjie.Licensing.EntitlementResolver.dll";
 const TUANJIE_EDITOR_EXE_SUBPATH: &str = r"Editor\Tuanjie.exe";
 
+/// Program Files roots to scan for Editor installations (covers C: and D: drives).
+const PROGRAM_FILES_ROOTS: &[&str] = &[r"C:\Program Files", r"D:\Program Files"];
+
 #[derive(Clone)]
 pub struct UnityInstall {
     pub version: String,
@@ -69,46 +72,54 @@ fn try_find_tuanjie_install(root: &Path, version: &str) -> Option<UnityInstall> 
 pub fn scan_installations() -> Vec<UnityInstall> {
     let mut installs = Vec::new();
 
-    if let Ok(dir) = std::fs::read_dir(r"C:\Program Files") {
-        for entry in dir.flatten() {
-            let path = entry.path();
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if path.is_dir() {
-                if let Some(version) = name.strip_prefix("Unity ") {
-                    if let Some(install) = try_find_install(&path, version) {
-                        installs.push(install);
-                    }
-                } else if let Some(version) = name.strip_prefix("Tuanjie ") {
-                    if let Some(install) = try_find_tuanjie_install(&path, version) {
-                        installs.push(install);
+    // Scan standalone installations under each Program Files root
+    for pf_root in PROGRAM_FILES_ROOTS {
+        let pf_path = Path::new(pf_root);
+        if let Ok(dir) = std::fs::read_dir(pf_path) {
+            for entry in dir.flatten() {
+                let path = entry.path();
+                let name = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                if path.is_dir() {
+                    if let Some(version) = name.strip_prefix("Unity ") {
+                        if let Some(install) = try_find_install(&path, version) {
+                            installs.push(install);
+                        }
+                    } else if let Some(version) = name.strip_prefix("Tuanjie ") {
+                        if let Some(install) = try_find_tuanjie_install(&path, version) {
+                            installs.push(install);
+                        }
                     }
                 }
             }
         }
     }
 
-    for (hub_editor_dir, is_tuanjie) in &[
-        (r"C:\Program Files\Unity Hub\Editor", false),
-        (r"C:\Program Files\Tuanjie Hub\Editor", true),
-    ] {
-        if let Ok(hub_dir) = std::fs::read_dir(hub_editor_dir) {
-            for entry in hub_dir.flatten() {
-                let path = entry.path();
-                if path.is_dir() {
-                    let version = path
-                        .file_name()
-                        .map(|n| n.to_string_lossy().to_string())
-                        .unwrap_or_else(|| "UNKNOWN".to_string());
-                    let install = if *is_tuanjie {
-                        try_find_tuanjie_install(&path, &version)
-                    } else {
-                        try_find_install(&path, &version)
-                    };
-                    if let Some(install) = install {
-                        installs.push(install);
+    // Scan Hub-managed Editor installations under each Program Files root
+    for pf_root in PROGRAM_FILES_ROOTS {
+        let hub_editor_dirs: &[(String, bool)] = &[
+            (format!(r"{}\Unity Hub\Editor", pf_root), false),
+            (format!(r"{}\Tuanjie Hub\Editor", pf_root), true),
+        ];
+        for (hub_editor_dir, is_tuanjie) in hub_editor_dirs {
+            if let Ok(hub_dir) = std::fs::read_dir(hub_editor_dir) {
+                for entry in hub_dir.flatten() {
+                    let path = entry.path();
+                    if path.is_dir() {
+                        let version = path
+                            .file_name()
+                            .map(|n| n.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "UNKNOWN".to_string());
+                        let install = if *is_tuanjie {
+                            try_find_tuanjie_install(&path, &version)
+                        } else {
+                            try_find_install(&path, &version)
+                        };
+                        if let Some(install) = install {
+                            installs.push(install);
+                        }
                     }
                 }
             }
