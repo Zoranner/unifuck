@@ -36,8 +36,8 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
     // Registry first (exact path)
     if let Some(path) = hub_path_from_registry(hub_name) {
         let canonical = normalize_path(&path);
-        if seen.insert(canonical.clone()) && canonical.join(asar_rel).exists() {
-            roots.push(canonical);
+        if seen.insert(canonical) && path.join(asar_rel).exists() {
+            roots.push(path);
         }
     }
 
@@ -45,8 +45,8 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
     for drive in available_drive_roots() {
         let candidate = drive.join("Program Files").join(hub_name);
         let canonical = normalize_path(&candidate);
-        if seen.insert(canonical.clone()) && canonical.join(asar_rel).exists() {
-            roots.push(canonical);
+        if seen.insert(canonical) && candidate.join(asar_rel).exists() {
+            roots.push(candidate);
         }
     }
 
