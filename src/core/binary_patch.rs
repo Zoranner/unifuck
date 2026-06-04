@@ -26,9 +26,15 @@ fn tuanjie_shared_licensing_client_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
-/// 将 ASCII/UTF-8 字符串转换为 UTF-16LE 字节序列。
-fn to_utf16le(s: &str) -> Vec<u8> {
-    s.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
+/// 将 ASCII/UTF-8 字符串转换为 CRLF UTF-16LE 字节序列。
+///
+/// Tuanjie DLL 中的 PEM 字符串以 CRLF 行尾存储 (.NET #US 堆在 Windows 上
+/// 保留编译器原始行尾)。PEM 源文件行尾可能是 LF 或 CRLF,
+/// 因此先统一为 LF 再转 CRLF, 避免双重转换。
+fn to_utf16le_crlf(s: &str) -> Vec<u8> {
+    let normalized = s.replace("\r\n", "\n");
+    let crlf = normalized.replace('\n', "\r\n");
+    crlf.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
 }
 
 /// 在字节数组中搜索 `old` 并原地替换为 `new`。
@@ -190,8 +196,8 @@ pub fn patch_dll(dll_path: &Path) -> anyhow::Result<()> {
 /// 编码为 UTF-16LE。此函数通过字节替换实现证书替换,
 /// 无需修改 PE 头或 .NET 元数据。
 pub fn patch_tuanjie_dll(dll_path: &Path) -> anyhow::Result<()> {
-    let orig_utf16 = to_utf16le(TUANJIE_ORIG_CERT_PEM.trim_end());
-    let mod_utf16 = to_utf16le(TUANJIE_MOD_CERT_PEM.trim_end());
+    let orig_utf16 = to_utf16le_crlf(TUANJIE_ORIG_CERT_PEM.trim_end());
+    let mod_utf16 = to_utf16le_crlf(TUANJIE_MOD_CERT_PEM.trim_end());
 
     if orig_utf16.len() != mod_utf16.len() {
         anyhow::bail!(
