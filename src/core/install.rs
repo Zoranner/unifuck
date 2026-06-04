@@ -14,6 +14,7 @@ const TUANJIE_EDITOR_EXE_SUBPATH: &str = r"Editor\Tuanjie.exe";
 #[derive(Clone)]
 pub struct UnityInstall {
     pub version: String,
+    pub display_name: &'static str,
     pub dll_path: PathBuf,
     pub exe_path: PathBuf,
 }
@@ -112,6 +113,7 @@ fn try_find_install(root: &Path, version: &str) -> Option<UnityInstall> {
     if dll_path.exists() {
         Some(UnityInstall {
             version: version.to_string(),
+            display_name: "Unity",
             dll_path,
             exe_path: root.join(EDITOR_EXE_SUBPATH),
         })
@@ -124,12 +126,22 @@ fn try_find_tuanjie_install(root: &Path, version: &str) -> Option<UnityInstall> 
     let dll_path = root.join(TUANJIE_LICENSING_DLL_SUBPATH);
     if dll_path.exists() {
         Some(UnityInstall {
-            version: format!("Tuanjie {}", version),
+            version: version.to_string(),
+            display_name: "Tuanjie",
             dll_path,
             exe_path: root.join(TUANJIE_EDITOR_EXE_SUBPATH),
         })
     } else {
         None
+    }
+}
+
+/// Sort key: Unity before Tuanjie, any unknown product last.
+fn sort_order(name: &str) -> u8 {
+    match name {
+        "Unity" => 0,
+        "Tuanjie" => 1,
+        _ => 2,
     }
 }
 
@@ -159,6 +171,10 @@ pub fn scan_installations() -> Vec<UnityInstall> {
         add_if_valid_install(&editor_path, &version, &mut installs, &mut seen);
     }
 
-    installs.sort_by(|a, b| b.version.cmp(&a.version));
+    installs.sort_by(|a, b| {
+        sort_order(a.display_name)
+            .cmp(&sort_order(b.display_name))
+            .then_with(|| b.version.cmp(&a.version))
+    });
     installs
 }

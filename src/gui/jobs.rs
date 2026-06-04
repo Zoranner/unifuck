@@ -72,38 +72,36 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
     for inst in &targets.selected {
+        let label = format!("{} {}", inst.display_name, inst.version);
         if core::is_patched(&inst.dll_path) {
-            tx.send(format!("TOK  {}  already patched, skipped", inst.version))
+            tx.send(format!("TOK  {}  already patched, skipped", label))
                 .ok();
             ok = true;
             continue;
         }
-        tx.send(format!("..  {}  patching DLL...", inst.version))
-            .ok();
+        tx.send(format!("..  {}  patching DLL...", label)).ok();
         match core::patch_dll(&inst.dll_path) {
             Ok(()) => {
-                tx.send(format!("TOK  {}  DLL patched", inst.version)).ok();
-                tx.send(format!("..  {}  patching exe...", inst.version))
-                    .ok();
+                tx.send(format!("TOK  {}  DLL patched", label)).ok();
+                tx.send(format!("..  {}  patching exe...", label)).ok();
                 match core::patch_exe(&inst.exe_path) {
                     Ok(()) => {
                         if core::is_exe_patched(&inst.exe_path) {
-                            tx.send(format!("..  {}  exe patched", inst.version)).ok();
+                            tx.send(format!("..  {}  exe patched", label)).ok();
                         } else {
-                            tx.send(format!("..  {}  exe skipped (no cert)", inst.version))
+                            tx.send(format!("..  {}  exe skipped (no cert)", label))
                                 .ok();
                         }
                     }
                     Err(e) => {
-                        tx.send(format!("..  {}  exe patch failed: {}", inst.version, e))
+                        tx.send(format!("..  {}  exe patch failed: {}", label, e))
                             .ok();
                     }
                 }
                 ok = true;
             }
             Err(e) => {
-                tx.send(format!("TERR {}  failed: {}", inst.version, e))
-                    .ok();
+                tx.send(format!("TERR {}  failed: {}", label, e)).ok();
             }
         }
     }
@@ -192,26 +190,24 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
     for inst in &targets.selected {
-        tx.send(format!("..  {}  un-patching...", inst.version))
-            .ok();
+        let label = format!("{} {}", inst.display_name, inst.version);
+        tx.send(format!("..  {}  un-patching...", label)).ok();
         match core::unpatch_dll(&inst.dll_path) {
             Ok(()) => {
-                tx.send(format!("TOK  {}  DLL restored", inst.version)).ok();
+                tx.send(format!("TOK  {}  DLL restored", label)).ok();
                 match core::unpatch_exe(&inst.exe_path) {
                     Ok(()) => {
-                        tx.send(format!("..  {}  exe restored/skipped", inst.version))
-                            .ok();
+                        tx.send(format!("..  {}  exe restored/skipped", label)).ok();
                     }
                     Err(e) => {
-                        tx.send(format!("..  {}  exe restore failed: {}", inst.version, e))
+                        tx.send(format!("..  {}  exe restore failed: {}", label, e))
                             .ok();
                     }
                 }
                 ok = true;
             }
             Err(e) => {
-                tx.send(format!("TERR {}  failed: {}", inst.version, e))
-                    .ok();
+                tx.send(format!("TERR {}  failed: {}", label, e)).ok();
             }
         }
     }
