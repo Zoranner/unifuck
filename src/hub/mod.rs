@@ -14,30 +14,41 @@ pub(crate) const HUB_ASAR_REL: &str = r"resources\app.asar";
 
 #[derive(Clone)]
 pub(crate) struct HubInfo {
+    pub name: String,
     pub version: String,
     pub asar_path: PathBuf,
 }
 
 // ── Hub Detection ──────────────────────────────────────────────
 
-pub(crate) fn find_hub() -> Option<HubInfo> {
+/// Find all Hub installations (Unity Hub and Tuanjie Hub).
+pub(crate) fn find_hubs() -> Vec<HubInfo> {
+    let mut hubs = Vec::new();
+
     // Try Unity Hub first (registry then Program Files on all drives),
     // then Tuanjie Hub with the same strategy.
     for hub_name in ["Unity Hub", "Tuanjie Hub"] {
         for hub_root in crate::discovery::find_hub_roots(hub_name) {
             let asar = hub_root.join(HUB_ASAR_REL);
-            if let Some(info) = hub_info_from_path(&hub_root, &asar) {
-                return Some(info);
+            if let Some(info) = hub_info_from_path(hub_name, &hub_root, &asar) {
+                hubs.push(info);
             }
         }
     }
 
-    None
+    hubs
 }
 
-fn hub_info_from_path(hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
+/// Find first Hub installation (legacy API for backward compatibility).
+#[allow(dead_code)]
+pub(crate) fn find_hub() -> Option<HubInfo> {
+    find_hubs().into_iter().next()
+}
+
+fn hub_info_from_path(hub_name: &str, hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
     let version = read_hub_version(hub_path, asar_path).unwrap_or_else(|| "unknown".to_string());
     Some(HubInfo {
+        name: hub_name.to_string(),
         version,
         asar_path: asar_path.to_path_buf(),
     })

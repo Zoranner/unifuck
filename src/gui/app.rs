@@ -5,9 +5,9 @@ use std::sync::mpsc;
 
 pub struct AppState {
     pub installs: Vec<UnityInstall>,
-    pub hub_info: Option<HubInfo>,
-    pub hub_patched: bool,
-    pub hub_selected: bool,
+    pub hubs: Vec<HubInfo>,
+    pub hub_patched: Vec<bool>,
+    pub hub_selected: Vec<bool>,
     pub running: bool,
     pub done: bool,
     pub success_count: usize,
@@ -35,16 +35,17 @@ impl AppState {
             .map(|i| core::is_patched(&i.dll_path))
             .collect();
         let selected = vec![false; installs.len()];
-        let hub_info = hub::find_hub();
-        let hub_patched = hub_info
-            .as_ref()
+        let hubs = hub::find_hubs();
+        let hub_patched: Vec<bool> = hubs
+            .iter()
             .map(|h| hub::is_hub_patched(&h.asar_path))
-            .unwrap_or(false);
+            .collect();
+        let hub_selected = vec![false; hubs.len()];
         Self {
             installs,
-            hub_info,
+            hubs,
             hub_patched,
-            hub_selected: false,
+            hub_selected,
             running: false,
             done: false,
             success_count: 0,
@@ -60,7 +61,7 @@ impl AppState {
     }
 
     pub fn total_count(&self) -> usize {
-        self.installs.len() + if self.hub_info.is_some() { 1 } else { 0 }
+        self.installs.len() + self.hubs.len()
     }
 
     pub fn status_text(&self) -> String {
@@ -75,11 +76,7 @@ impl AppState {
         if n == 0 {
             return "NO INSTALL".into();
         }
-        let hub_patched_count = if self.hub_info.is_some() && self.hub_patched {
-            1
-        } else {
-            0
-        };
+        let hub_patched_count = self.hub_patched.iter().filter(|p| **p).count();
         let editor_patched_count = self.patched.iter().filter(|p| **p).count();
         let patched = hub_patched_count + editor_patched_count;
         if patched == n {
@@ -92,7 +89,7 @@ impl AppState {
     }
 
     pub fn has_selection(&self) -> bool {
-        self.hub_selected || self.selected.iter().any(|s| *s)
+        self.hub_selected.iter().any(|s| *s) || self.selected.iter().any(|s| *s)
     }
 
     /// 重新扫描 patched 状态 (基于 .bak 是否存在)
@@ -102,13 +99,15 @@ impl AppState {
             .iter()
             .map(|i| core::is_patched(&i.dll_path))
             .collect();
-        if let Some(ref hub) = self.hub_info {
-            self.hub_patched = hub::is_hub_patched(&hub.asar_path);
-        }
+        self.hub_patched = self
+            .hubs
+            .iter()
+            .map(|h| hub::is_hub_patched(&h.asar_path))
+            .collect();
         if self.patched.len() != self.selected.len() {
             self.selected = vec![false; self.patched.len()];
         }
-        self.hub_selected = false;
+        self.hub_selected = vec![false; self.hubs.len()];
     }
 
     // Returns (updated, just_finished)
@@ -157,16 +156,16 @@ pub fn sync_ui(window: &super::AppWindow, state: &AppState) {
     let mode = state.selection_mode;
     let mut items: Vec<super::InstallItem> = Vec::new();
 
-    // Hub 行 (始终作为第一行)
-    if let Some(ref hub) = state.hub_info {
-        let p = state.hub_patched;
-        let sel = state.hub_selected;
+    // Hub 行 (每个 Hub 一行)
+    for (hub_idx, hub) in state.hubs.iter().enumerate() {
+        let p = *state.hub_patched.get(hub_idx).unwrap_or(&false);
+        let sel = *state.hub_selected.get(hub_idx).unwrap_or(&false);
         let disabled = match mode {
             Some(m) => p != m,
             None => false,
         };
         items.push(super::InstallItem {
-            version: format!("Hub {}", hub.version).into(),
+            version: format!("{} {}", hub.name, hub.version).into(),
             path: hub.asar_path.display().to_string().into(),
             status: (if p { "PATCHED" } else { "UNPATCHED" }).into(),
             st_color: if p {

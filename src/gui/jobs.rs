@@ -9,8 +9,8 @@ struct JobTargets {
     selected: Vec<core::UnityInstall>,
     all_paths: Vec<PathBuf>,
     all_exe_paths: Vec<PathBuf>,
-    hub_info: Option<HubInfo>,
-    hub_selected: bool,
+    hubs: Vec<HubInfo>,
+    hub_selected: Vec<bool>,
     is_unpatch: bool,
 }
 
@@ -52,7 +52,9 @@ fn collect_targets(app: &AppState) -> Option<JobTargets> {
         .map(|(_, inst)| inst.clone())
         .collect::<Vec<_>>();
 
-    if selected.is_empty() && !app.hub_selected {
+    let any_hub_selected = app.hub_selected.iter().any(|s| *s);
+
+    if selected.is_empty() && !any_hub_selected {
         return None;
     }
 
@@ -60,8 +62,8 @@ fn collect_targets(app: &AppState) -> Option<JobTargets> {
         selected,
         all_paths: app.installs.iter().map(|i| i.dll_path.clone()).collect(),
         all_exe_paths: app.installs.iter().map(|i| i.exe_path.clone()).collect(),
-        hub_info: app.hub_info.clone(),
-        hub_selected: app.hub_selected,
+        hubs: app.hubs.clone(),
+        hub_selected: app.hub_selected.clone(),
         is_unpatch: mode,
     })
 }
@@ -123,26 +125,29 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
         }
     }
 
-    if targets.hub_selected {
-        if let Some(ref hub) = targets.hub_info {
-            if hub::is_hub_patched(&hub.asar_path) {
-                tx.send(format!(
-                    "TOK  Hub {}  already patched, skipped",
-                    hub.version
-                ))
+    for (hub_idx, hub) in targets.hubs.iter().enumerate() {
+        if !*targets.hub_selected.get(hub_idx).unwrap_or(&false) {
+            continue;
+        }
+        if hub::is_hub_patched(&hub.asar_path) {
+            tx.send(format!(
+                "TOK  {} {}  already patched, skipped",
+                hub.name, hub.version
+            ))
+            .ok();
+            ok = true;
+        } else {
+            tx.send(format!("..  {} {}  patching...", hub.name, hub.version))
                 .ok();
-                ok = true;
-            } else {
-                tx.send(format!("..  Hub {}  patching...", hub.version))
-                    .ok();
-                match hub::patch_hub(hub) {
-                    Ok(()) => {
-                        tx.send(format!("TOK  Hub {}  success", hub.version)).ok();
-                        ok = true;
-                    }
-                    Err(e) => {
-                        tx.send(format!("TERR Hub {}: {}", hub.version, e)).ok();
-                    }
+            match hub::patch_hub(hub) {
+                Ok(()) => {
+                    tx.send(format!("TOK  {} {}  success", hub.name, hub.version))
+                        .ok();
+                    ok = true;
+                }
+                Err(e) => {
+                    tx.send(format!("TERR {} {}: {}", hub.name, hub.version, e))
+                        .ok();
                 }
             }
         }
@@ -223,18 +228,21 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
         }
     }
 
-    if targets.hub_selected {
-        if let Some(ref hub) = targets.hub_info {
-            tx.send(format!("..  Hub {}  un-patching...", hub.version))
-                .ok();
-            match hub::unpatch_hub(hub) {
-                Ok(()) => {
-                    tx.send(format!("TOK  Hub {}  restored", hub.version)).ok();
-                    ok = true;
-                }
-                Err(e) => {
-                    tx.send(format!("TERR Hub {}: {}", hub.version, e)).ok();
-                }
+    for (hub_idx, hub) in targets.hubs.iter().enumerate() {
+        if !*targets.hub_selected.get(hub_idx).unwrap_or(&false) {
+            continue;
+        }
+        tx.send(format!("..  {} {}  un-patching...", hub.name, hub.version))
+            .ok();
+        match hub::unpatch_hub(hub) {
+            Ok(()) => {
+                tx.send(format!("TOK  {} {}  restored", hub.name, hub.version))
+                    .ok();
+                ok = true;
+            }
+            Err(e) => {
+                tx.send(format!("TERR {} {}: {}", hub.name, hub.version, e))
+                    .ok();
             }
         }
     }
@@ -256,10 +264,9 @@ fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &Job
             .any(|p| core::is_exe_patched(p))
         || core::is_shared_licensing_client_patched();
     let any_hub_left = targets
-        .hub_info
-        .as_ref()
-        .map(|h| hub::is_hub_patched(&h.asar_path))
-        .unwrap_or(false);
+        .hubs
+        .iter()
+        .any(|h| hub::is_hub_patched(&h.asar_path));
 
     if !any_editor_left && !any_hub_left {
         tx.send("..  removing license...".into()).ok();

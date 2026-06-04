@@ -17,30 +17,28 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 return;
             }
 
-            let has_hub = app.hub_info.is_some();
-            let is_hub_row = has_hub && idx == 0;
-            // Hub 存在时 Editor 行从 UI index 1 开始, 映射到 installs index 0
-            let editor_idx = if has_hub {
-                idx as usize - 1
-            } else {
-                idx as usize
-            };
+            let hub_count = app.hubs.len();
+            let is_hub_row = (idx as usize) < hub_count;
+            // Hub 行占用 UI index 0..hub_count, Editor 行从 hub_count 开始
+            let editor_idx = idx as usize - hub_count;
 
             if is_hub_row {
-                let hub_patched = app.hub_patched;
-                if app.hub_selected {
-                    app.hub_selected = false;
-                    if !app.selected.iter().any(|s| *s) {
+                let hi = idx as usize;
+                let hub_patched = *app.hub_patched.get(hi).unwrap_or(&false);
+
+                if app.hub_selected[hi] {
+                    app.hub_selected[hi] = false;
+                    if !app.hub_selected.iter().any(|s| *s) && !app.selected.iter().any(|s| *s) {
                         app.selection_mode = None;
                     }
                 } else {
                     match app.selection_mode {
                         None => {
                             app.selection_mode = Some(hub_patched);
-                            app.hub_selected = true;
+                            app.hub_selected[hi] = true;
                         }
                         Some(m) if m == hub_patched => {
-                            app.hub_selected = true;
+                            app.hub_selected[hi] = true;
                         }
                         _ => return,
                     }
@@ -56,7 +54,7 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 if cur_sel {
                     // 取消选中
                     app.selected[i] = false;
-                    if !app.selected.iter().any(|s| *s) && !app.hub_selected {
+                    if !app.selected.iter().any(|s| *s) && !app.hub_selected.iter().any(|s| *s) {
                         app.selection_mode = None;
                     }
                 } else {
@@ -98,7 +96,9 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
             for s in app.selected.iter_mut() {
                 *s = false;
             }
-            app.hub_selected = false;
+            for s in app.hub_selected.iter_mut() {
+                *s = false;
+            }
         }
         sync_ui(&win, &app);
         if just_finished {
