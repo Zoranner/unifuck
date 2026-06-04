@@ -11,6 +11,20 @@ pub struct EditorInstall {
     pub exe_path: PathBuf,
 }
 
+impl EditorInstall {
+    /// Whether this editor is currently a supported patch target.
+    ///
+    /// Tuanjie Editor 2022.3 adds an IPC-layer signature handshake
+    /// (`VerifyLicenseFiles` in native `bindings.dll`) that our cert + ULF
+    /// replacement does not satisfy, so the Editor still rejects the
+    /// license. Patching the IPC layer requires native binary reversal
+    /// and is tracked separately. Show the row but block selection until
+    /// that work lands.
+    pub fn is_supported(&self) -> bool {
+        self.vendor != Vendor::Tuanjie
+    }
+}
+
 // ── Scan Helpers ───────────────────────────────────────────────
 
 /// Try adding any vendor's editor install at `root` to the list.

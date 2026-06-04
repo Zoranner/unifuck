@@ -176,19 +176,20 @@ pub fn sync_ui(window: &super::AppWindow, state: &AppState) {
     for (idx, i) in state.installs.iter().enumerate() {
         let p = *state.patched.get(idx).unwrap_or(&false);
         let sel = *state.selected.get(idx).unwrap_or(&false);
-        let disabled = match mode {
-            Some(m) => p != m,
-            None => false,
+        let unsupported = !i.is_supported();
+        let disabled = unsupported || matches!(mode, Some(m) if p != m);
+        let (status, st_color) = if unsupported {
+            ("CRACKING", slint::Color::from_rgb_u8(0x9c, 0x9c, 0x9c))
+        } else if p {
+            ("PATCHED", slint::Color::from_rgb_u8(0x34, 0xd3, 0x99))
+        } else {
+            ("UNPATCHED", slint::Color::from_rgb_u8(0xf8, 0x71, 0x71))
         };
         items.push(super::InstallItem {
             version: format!("{} Editor {}", i.vendor.display_name(), i.version).into(),
             path: i.dll_path.display().to_string().into(),
-            status: (if p { "PATCHED" } else { "UNPATCHED" }).into(),
-            st_color: if p {
-                slint::Color::from_rgb_u8(0x34, 0xd3, 0x99)
-            } else {
-                slint::Color::from_rgb_u8(0xf8, 0x71, 0x71)
-            },
+            status: status.into(),
+            st_color,
             selected: sel,
             disabled,
             patched: p,

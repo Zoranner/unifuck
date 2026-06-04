@@ -48,6 +48,9 @@ pub fn connect(window: &super::AppWindow, state: Rc<RefCell<AppState>>) {
                 if i >= app.installs.len() {
                     return;
                 }
+                if !app.installs[i].is_supported() {
+                    return;
+                }
                 let row_patched = *app.patched.get(i).unwrap_or(&false);
                 let cur_sel = *app.selected.get(i).unwrap_or(&false);
 
