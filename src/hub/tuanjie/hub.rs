@@ -7,11 +7,12 @@ use serde_json::Value;
 
 /// Tuanjie Hub patch strategy.
 ///
-/// Characteristics:
-/// - Forked from the Unity Hub CommonJS architecture, but `package.json` has `name = "TuanjieHub"`.
-/// - File layout matches the Unity CommonJS strategy, but the `AuthService`
-///   constructor and auth flow differ — Tuanjie uses `setLoggedInFlags()`
-///   in place of `restoreAuthState()`.
+/// Bootstrap path in real Tuanjie 1.4.2 AuthService:
+///   `init()` → `initNetworkInterceptors()` + `onNetworkUp()`;
+///   `onNetworkUp()` short-circuits to `logout()` when no tokens exist,
+///   so `setLoggedInFlags()` is never reached on an airgapped install.
+///   Therefore `init()` itself must be replaced to call
+///   `initNetworkInterceptors()` and then `setLoggedInFlags()` directly.
 pub(crate) struct TuanjieHubStrategy;
 
 impl TuanjieHubStrategy {
@@ -106,37 +107,134 @@ impl PatchStrategy for TuanjieHubStrategy {
 
 // ── Patch Functions ────────────────────────────────────────────
 
+/// Patches to `licenseService.js`:
+/// 1. `isLicenseValid()` → return true.
+/// 2. `getValidEntitlementGroups()` → return a fake entitlement array shaped
+///    for `convertEntitlementGroupsIntoLicenses` (productName, licenseType,
+///    startDate, expirationDate, updateDate, entitlementGroupId,
+///    validationErrors). The original delegates to
+///    `licensingSdk.getInstance().getAllEntitlementGroups()` which our SDK
+///    stub returns empty, so Hub UI would show no license without this.
+///
+/// Each patch is applied independently.
 fn patch_license_service_js(content: &str) -> anyhow::Result<String> {
-    let new_body = wrap_awaiter("            return true;");
-    replace_fn_body(content, "isLicenseValid(", &new_body).context("patch isLicenseValid failed")
-}
+    let mut current = content.to_string();
+    let mut applied = 0usize;
 
-fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
-    // 1. init(externalCorrelationId) → return true
-    let new_init = wrap_awaiter("            return true;");
-    let after_init = replace_fn_body(content, "init(externalCorrelationId", &new_init)
-        .context("patch init(externalCorrelationId) failed")?;
+    let new_is_valid = wrap_awaiter("            return true;");
+    if let Some(s) = replace_fn_body(&current, "isLicenseValid(", &new_is_valid) {
+        current = s;
+        applied += 1;
+    } else {
+        eprintln!("warning: licenseService isLicenseValid signature missed");
+    }
 
-    // 2. getInstance() → return null
-    let new_get_instance = wrap_naked_async("        return null;");
-    let after_instance = replace_fn_body(&after_init, "getInstance(", &new_get_instance)
-        .context("patch getInstance failed")?;
-
-    // 3. getValidEntitlementGroups() → 返回伪造的教育许可证
     let new_groups = wrap_awaiter(
         "            return [{
                 startDate: new Date('1970-01-01T00:00:00.000Z'),
-                expirationDate: new Date('9999-01-01T00:00:00.000Z'),
-                productName: 'Education',
+                expirationDate: new Date('9999-01-01T08:00:00.000Z'),
+                updateDate: new Date('2024-01-01T08:00:00.000Z'),
+                productName: 'Unifuck Pro Max Ultra',
                 licenseType: 'ULF',
+                entitlementGroupId: 'U4-Unifuck-pro-001',
+                validationErrors: [],
             }];",
     );
-    replace_fn_body(&after_instance, "getValidEntitlementGroups(", &new_groups)
-        .context("patch getValidEntitlementGroups failed")
+    if let Some(s) = replace_fn_body(&current, "getValidEntitlementGroups(", &new_groups) {
+        current = s;
+        applied += 1;
+    } else {
+        eprintln!("warning: licenseService getValidEntitlementGroups signature missed");
+    }
+
+    if applied == 0 {
+        anyhow::bail!("no licenseService patches applied");
+    }
+    Ok(current)
 }
 
+/// Patches to `licensingSdk.js` are applied independently. Tuanjie does not
+/// expose a zero-argument `getValidEntitlementGroups`, only
+/// `getValidEntitlementGroupsByType(licenseTypes)`, so we skip it here.
+///
+/// `getInstance()` returns a fat stub rather than `null` because
+/// `getValidEntitlementGroupsByType` (and possibly other call sites)
+/// chains `.getAllEntitlementGroups()` without optional chaining, which
+/// would throw on a null return.
+fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
+    let mut current = content.to_string();
+    let mut applied = 0usize;
+
+    let new_init = wrap_awaiter("            return true;");
+    match replace_fn_body(&current, "init(externalCorrelationId", &new_init) {
+        Some(s) => {
+            current = s;
+            applied += 1;
+        }
+        None => eprintln!("warning: licensingSdk init(externalCorrelationId) signature missed"),
+    }
+
+    let stub = licensing_sdk_get_instance_stub();
+    match replace_fn_body(&current, "getInstance(", &stub) {
+        Some(s) => {
+            current = s;
+            applied += 1;
+        }
+        None => eprintln!("warning: licensingSdk getInstance signature missed"),
+    }
+
+    if applied == 0 {
+        anyhow::bail!("no licensingSdk patches applied");
+    }
+    Ok(current)
+}
+
+/// Fat stub mirroring the Unity CommonJS strategy — safe defaults so that
+/// `getInstance().getAllEntitlementGroups()` and similar chains do not throw.
+fn licensing_sdk_get_instance_stub() -> String {
+    wrap_naked_async(
+        "        return {
+            getConnectedPipeName() { return ''; },
+            connect() { return Promise.resolve(false); },
+            dispose() { return Promise.resolve(); },
+            getMachineId() { return Promise.resolve(''); },
+            getCorrelationId() { return Promise.resolve(''); },
+            getAllEntitlementGroups() { return Promise.resolve({ entitlementGroupsDetails: [] }); },
+            checkEntitlement() { return Promise.resolve(true); },
+            checkFeatureStatus() { return Promise.resolve({ featureStatus: 0 }); },
+            importLicense() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            generateUnityAlf() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            activateUlfLicense() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            returnEntitlementGroup() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub', returnEntitlementGroupResults: [{ statusCode: 500 }] }); },
+            borrowLicense() { return Promise.resolve({ licenseError: 'Generic' }); },
+            returnBorrow() { return Promise.resolve({ isSuccessful: () => false, responseCode: 0, responseStatus: 'stub' }); },
+            activateAllEntitlementBasedLicenses() { return Promise.resolve({ isSuccessful: () => true }); },
+            updateLicenses() { return Promise.resolve({ isSuccessful: () => true, responseCode: 0, responseStatus: 'stub' }); },
+            setAccessToken() { return Promise.resolve(); },
+        };",
+    )
+}
+
+/// Patches to `AuthService.js`:
+/// 1. `constructor()` — preserve original field init, append fake userInfo
+///    (with `identifier` so any caller that bypasses the patched
+///    `isUserSignedIn` still sees a signed-in user).
+/// 2. `isUserSignedIn()` — return true (real Tuanjie checks
+///    `Boolean(userInfo?.identifier)`).
+/// 3. `init()` — replace body so the token-check branch in
+///    `onNetworkUp()` (which calls `logout()` on airgapped installs) is
+///    skipped; we still call `initNetworkInterceptors()` so the rest of
+///    the app sees network state events, then call the ORIGINAL
+///    `setLoggedInFlags()` (we do not patch it — Tuanjie's own body
+///    already emits the full 3× windowManager + cloudAnalytics + 3×
+///    postal_1 broadcast set the renderer subscribes to).
+///
+/// Each patch is applied independently — a missed signature on one
+/// function does not roll back the others.
 fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
-    // 1. constructor() — 保留原始初始化逻辑，末尾注入 fake userInfo
+    let mut current = content.to_string();
+    let mut applied = 0usize;
+
     let new_constructor = wrap_naked_async(&format!(
         "        super();
         this.userInfo = undefined;
@@ -155,150 +253,87 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
         this.tokenWatcher = null;
         this.userInfo = {{
 {FAKE_USER_FIELDS}
+            identifier: \"unifuck-id\",
         }};"
     ));
-    let after_constructor = match replace_fn_body(content, "constructor(", &new_constructor) {
-        Some(s) => s,
-        None => content.to_string(),
-    };
-
-    // 2. setLoggedInFlags() — 设置 loggedIn/ready 为 true 并广播事件
-    let new_flags = wrap_naked_async(
-        "        this.connectInfo.ready = true;
-        this.connectInfo.loggedIn = true;
-        this.connectInfo.initialized = true;
-        this.connectInfo.workOffline = false;
-        this.userOrgs = null;
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.CONNECT_INFO_CHANGED, this.connectInfo);
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.USER_INFO_CHANGED, this.getFormattedUserInfo());
-        windowManager_1.default.broadcastContent(RendererEvents_1.default.USER_SIGN_IN, this.userInfo);",
-    );
-    match replace_fn_body(&after_constructor, "setLoggedInFlags(", &new_flags) {
-        Some(s) => Ok(s),
-        None => Ok(after_constructor),
+    if let Some(s) = replace_fn_body(&current, "constructor(", &new_constructor) {
+        current = s;
+        applied += 1;
+    } else {
+        eprintln!("warning: AuthService constructor signature missed");
     }
+
+    let new_is_signed_in = wrap_naked_async("        return true;");
+    if let Some(s) = replace_fn_body(&current, "isUserSignedIn(", &new_is_signed_in) {
+        current = s;
+        applied += 1;
+    } else {
+        eprintln!("warning: AuthService isUserSignedIn signature missed");
+    }
+
+    let new_init = wrap_awaiter(
+        "            this.authLogger.info('Initializing the auth service');
+            this.initNetworkInterceptors();
+            this.setLoggedInFlags();
+            return this.userInfo;",
+    );
+    if let Some(s) = replace_fn_body(&current, "init(", &new_init) {
+        current = s;
+        applied += 1;
+    } else {
+        eprintln!("warning: AuthService init() signature missed");
+    }
+
+    if applied == 0 {
+        anyhow::bail!("no AuthService patches applied");
+    }
+    Ok(current)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    /// Guard byte-for-byte equivalence with the pre-refactor hardcoded body
-    /// for the licenseService isLicenseValid replacement.
     #[test]
-    fn license_service_is_license_valid_matches_legacy() {
-        let legacy = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            return true;
-        });
-    }"#;
+    fn license_service_is_license_valid_wrap() {
         let built = wrap_awaiter("            return true;");
-        assert_eq!(built, legacy);
+        assert!(built.contains("return __awaiter"));
+        assert!(built.contains("return true;"));
     }
 
     #[test]
-    fn licensing_sdk_get_instance_matches_legacy() {
-        let legacy = r#"{
-        return null;
-    }"#;
-        let built = wrap_naked_async("        return null;");
-        assert_eq!(built, legacy);
+    fn licensing_sdk_get_instance_stub_has_safe_defaults() {
+        let stub = licensing_sdk_get_instance_stub();
+        // Critical: getAllEntitlementGroups is called without optional chaining
+        // in Tuanjie's getValidEntitlementGroupsByType, must not return null.
+        assert!(stub.contains("getAllEntitlementGroups()"));
+        assert!(stub.contains("entitlementGroupsDetails: []"));
     }
 
     #[test]
-    fn licensing_sdk_groups_matches_legacy() {
-        let legacy = r#"{
-        return __awaiter(this, void 0, void 0, function* () {
-            return [{
-                startDate: new Date('1970-01-01T00:00:00.000Z'),
-                expirationDate: new Date('9999-01-01T00:00:00.000Z'),
-                productName: 'Education',
-                licenseType: 'ULF',
-            }];
-        });
-    }"#;
-        let built = wrap_awaiter(
-            "            return [{
-                startDate: new Date('1970-01-01T00:00:00.000Z'),
-                expirationDate: new Date('9999-01-01T00:00:00.000Z'),
-                productName: 'Education',
-                licenseType: 'ULF',
-            }];",
-        );
-        assert_eq!(built, legacy);
-    }
-
-    #[test]
-    fn auth_service_constructor_matches_legacy() {
-        let legacy = r#"{
-        super();
-        this.userInfo = undefined;
-        this.codeVerifier = '';
-        this.authLogger = (0, logger_1.default)('Authentification Service');
-        this.connectInfo = {
-            error: false,
-            initialized: false,
-            loggedIn: false,
-            maintenance: false,
-            online: true,
-            ready: false,
-            showLoginWindow: false,
-            workOffline: false,
-        };
-        this.tokenWatcher = null;
-        this.userInfo = {
-            foreignKey: "unifuck-fk",
-            name: "Unifuck",
-            email: "bypass@local",
-            primaryOrg: "local",
-            createdAt: "1970-01-01T00:00:00.000Z",
-        };
-    }"#;
+    fn auth_service_constructor_injects_identifier() {
+        // identifier field is required because real Tuanjie's isUserSignedIn
+        // checks Boolean(userInfo?.identifier).
         let built = wrap_naked_async(&format!(
             "        super();
-        this.userInfo = undefined;
-        this.codeVerifier = '';
-        this.authLogger = (0, logger_1.default)('Authentification Service');
-        this.connectInfo = {{
-            error: false,
-            initialized: false,
-            loggedIn: false,
-            maintenance: false,
-            online: true,
-            ready: false,
-            showLoginWindow: false,
-            workOffline: false,
-        }};
-        this.tokenWatcher = null;
         this.userInfo = {{
 {FAKE_USER_FIELDS}
+            identifier: \"unifuck-id\",
         }};"
         ));
-        assert_eq!(built, legacy);
+        assert!(built.contains("identifier: \"unifuck-id\""));
+        assert!(built.contains("foreignKey: \"unifuck-fk\""));
     }
 
     #[test]
-    fn auth_service_set_logged_in_flags_matches_legacy() {
-        let legacy = r#"{
-        this.connectInfo.ready = true;
-        this.connectInfo.loggedIn = true;
-        this.connectInfo.initialized = true;
-        this.connectInfo.workOffline = false;
-        this.userOrgs = null;
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.CONNECT_INFO_CHANGED, this.connectInfo);
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.USER_INFO_CHANGED, this.getFormattedUserInfo());
-        windowManager_1.default.broadcastContent(RendererEvents_1.default.USER_SIGN_IN, this.userInfo);
-    }"#;
-        let built = wrap_naked_async(
-            "        this.connectInfo.ready = true;
-        this.connectInfo.loggedIn = true;
-        this.connectInfo.initialized = true;
-        this.connectInfo.workOffline = false;
-        this.userOrgs = null;
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.CONNECT_INFO_CHANGED, this.connectInfo);
-        windowManager_1.default.broadcastContent(PostalTopic_1.default.USER_INFO_CHANGED, this.getFormattedUserInfo());
-        windowManager_1.default.broadcastContent(RendererEvents_1.default.USER_SIGN_IN, this.userInfo);",
+    fn auth_service_init_calls_set_logged_in_flags() {
+        let built = wrap_awaiter(
+            "            this.authLogger.info('Initializing the auth service');
+            this.initNetworkInterceptors();
+            this.setLoggedInFlags();
+            return this.userInfo;",
         );
-        assert_eq!(built, legacy);
+        assert!(built.contains("this.initNetworkInterceptors();"));
+        assert!(built.contains("this.setLoggedInFlags();"));
     }
 }
