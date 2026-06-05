@@ -2,6 +2,7 @@ mod cert;
 mod hosts;
 mod install;
 mod license;
+mod loader;
 
 use base64::Engine;
 
@@ -12,6 +13,7 @@ pub use cert::{
 pub use hosts::{clean_hosts, write_hosts_if_needed};
 pub use install::{scan_installations, EditorInstall};
 pub use license::{deploy_license, remove_license, sign_license};
+pub use loader::{deploy as deploy_loader, revert as revert_loader};
 
 pub(super) fn base64_lines(der: &[u8]) -> String {
     let b64 = base64::engine::general_purpose::STANDARD.encode(der);

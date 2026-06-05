@@ -99,4 +99,11 @@ impl Vendor {
             Vendor::Tuanjie => include_str!("../keys/tuanjie/mod/priv.key"),
         }
     }
+
+    /// 是否需要 native runtime hook (DLL forwarder loader)。Tuanjie Editor
+    /// 2022.3+ 的 IPC AuthorizationCheck 由 Sentinel HASP envelope 守护,
+    /// 必须在内存里 patch `IsValidIPCResponse`,纯 cert + ULF 替换不够。
+    pub fn supports_native_hook(self) -> bool {
+        matches!(self, Vendor::Tuanjie)
+    }
 }

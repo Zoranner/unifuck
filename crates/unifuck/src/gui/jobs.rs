@@ -98,6 +98,20 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
                             .ok();
                     }
                 }
+                if inst.vendor.supports_native_hook() {
+                    if let Some(editor_dir) = inst.exe_path.parent() {
+                        tx.send(format!("..  {}  deploying loader...", label)).ok();
+                        match core::deploy_loader(editor_dir) {
+                            Ok(()) => {
+                                tx.send(format!("..  {}  loader deployed", label)).ok();
+                            }
+                            Err(e) => {
+                                tx.send(format!("..  {}  loader deploy failed: {}", label, e))
+                                    .ok();
+                            }
+                        }
+                    }
+                }
                 ok = true;
             }
             Err(e) => {
@@ -222,6 +236,20 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
                     Err(e) => {
                         tx.send(format!("..  {}  exe restore failed: {}", label, e))
                             .ok();
+                    }
+                }
+                if inst.vendor.supports_native_hook() {
+                    if let Some(editor_dir) = inst.exe_path.parent() {
+                        tx.send(format!("..  {}  reverting loader...", label)).ok();
+                        match core::revert_loader(editor_dir) {
+                            Ok(()) => {
+                                tx.send(format!("..  {}  loader reverted", label)).ok();
+                            }
+                            Err(e) => {
+                                tx.send(format!("..  {}  loader revert failed: {}", label, e))
+                                    .ok();
+                            }
+                        }
                     }
                 }
                 ok = true;
