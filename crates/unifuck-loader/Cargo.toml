@@ -1,0 +1,16 @@
+[package]
+name = "unifuck-loader"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "unifuck_loader"
+crate-type = ["cdylib"]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_LibraryLoader",
+    "Win32_System_SystemServices",
+    "Win32_System_Threading",
+] }

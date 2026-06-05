@@ -5158,6 +5158,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "unifuck-loader"
+version = "0.3.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "unty"
 version = "0.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
