@@ -1,25 +1,19 @@
-[package]
-name = "unifuck"
+[workspace]
+resolver = "2"
+members = [
+    "crates/unifuck",
+]
+
+[workspace.package]
 version = "0.3.0"
 edition = "2021"
 
-[dependencies]
-roxmltree = "0.20"
-rsa = "0.9"
-sha1 = { version = "0.10", features = ["oid"] }
-base64 = "0.22"
-pem = "3"
+[workspace.dependencies]
 anyhow = "1"
-slint = "1"
-serde_json = { version = "1", features = ["preserve_order"] }
-sha2 = "0.10"
+windows-sys = "0.59"
 
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Registry"] }
-
-[build-dependencies]
-slint-build = "1"
-
-[target.'cfg(windows)'.build-dependencies]
-embed-manifest = "1"
-winresource = "0.1"
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"

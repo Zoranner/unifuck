@@ -1,0 +1,33 @@
+[package]
+name = "unifuck"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "unifuck"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+roxmltree = "0.20"
+rsa = "0.9"
+sha1 = { version = "0.10", features = ["oid"] }
+sha2 = "0.10"
+base64 = "0.22"
+pem = "3"
+slint = "1"
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Registry",
+] }
+
+[build-dependencies]
+slint-build = "1"
+
+[target.'cfg(windows)'.build-dependencies]
+embed-manifest = "1"
+winresource = "0.1"
