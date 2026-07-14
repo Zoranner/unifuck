@@ -18,49 +18,30 @@ pub(crate) const HUB_ASAR_REL: &str = r"resources\app.asar";
 
 #[derive(Clone)]
 pub(crate) struct HubInfo {
-    pub name: String,
     pub version: String,
-    pub asar_path: PathBuf,
     pub vendor: Vendor,
+    /// Hub root directory (e.g. `C:\Program Files\Unity Hub`).
+    /// All sub-paths (asar, licensing client) derive from this.
+    pub root: PathBuf,
 }
 
 // ── Hub Detection ──────────────────────────────────────────────
 
-/// Find all Hub installations (Unity Hub and Tuanjie Hub).
-pub(crate) fn find_hubs() -> Vec<HubInfo> {
-    let mut hubs = Vec::new();
-
-    for vendor in Vendor::all().iter().copied() {
-        let hub_name = vendor.hub_name();
-        for hub_root in crate::discovery::find_hub_roots(hub_name) {
-            let asar = hub_root.join(HUB_ASAR_REL);
-            if let Some(info) = hub_info_from_path(vendor, &hub_root, &asar) {
-                hubs.push(info);
-            }
-        }
-    }
-
-    hubs
-}
-
-/// Find first Hub installation (legacy API for backward compatibility).
-#[allow(dead_code)]
-pub(crate) fn find_hub() -> Option<HubInfo> {
-    find_hubs().into_iter().next()
-}
-
-fn hub_info_from_path(vendor: Vendor, hub_path: &Path, asar_path: &Path) -> Option<HubInfo> {
+pub(crate) fn hub_info_from_path(
+    vendor: Vendor,
+    hub_path: &Path,
+    asar_path: &Path,
+) -> Option<HubInfo> {
     let version = read_hub_version(hub_path, asar_path).unwrap_or_else(|| "unknown".to_string());
     Some(HubInfo {
-        name: vendor.hub_name().to_string(),
         version,
-        asar_path: asar_path.to_path_buf(),
         vendor,
+        root: hub_path.to_path_buf(),
     })
 }
 
-pub(crate) fn is_hub_patched(asar_path: &Path) -> bool {
-    asar_path.with_extension("asar.bak").exists()
+pub(crate) fn is_hub_patched(root: &Path) -> bool {
+    root.join(r"resources\app.asar.bak").exists()
 }
 
 // ── Version Reading ────────────────────────────────────────────
@@ -96,26 +77,20 @@ fn extract_version_from_json_str(s: &str) -> Option<String> {
 // ── Main Patch / Unpatch ───────────────────────────────────────
 
 pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
-    let asar_path = &info.asar_path;
+    let asar_path = info.root.join(r"resources\app.asar");
 
     // Backup
     let bak_path = asar_path.with_extension("asar.bak");
-    std::fs::copy(asar_path, &bak_path).context("backup asar failed")?;
+    std::fs::copy(&asar_path, &bak_path).context("backup asar failed")?;
 
     // Read
-    let asar = asar::read_asar(asar_path)?;
+    let asar = asar::read_asar(&asar_path)?;
 
     // Dispatch to the per-vendor strategy detector.
     let strategy = match info.vendor {
         Vendor::Unity => unity::detect_strategy(&asar)?,
         Vendor::Tuanjie => tuanjie::detect_strategy(&asar)?,
     };
-    eprintln!(
-        "hub patch: vendor={} strategy={}",
-        info.vendor.display_name(),
-        strategy.version_name()
-    );
-
     // Apply patches
     let modified = strategy.apply_patches(&asar)?;
 
@@ -124,17 +99,18 @@ pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
     }
 
     // Write patched asar
-    asar::write_asar(asar_path, &modified, &asar)?;
+    asar::write_asar(&asar_path, &modified, &asar)?;
 
     Ok(())
 }
 
 pub(crate) fn unpatch_hub(info: &HubInfo) -> anyhow::Result<()> {
-    let bak_path = info.asar_path.with_extension("asar.bak");
+    let asar_path = info.root.join(r"resources\app.asar");
+    let bak_path = asar_path.with_extension("asar.bak");
     if !bak_path.exists() {
         anyhow::bail!("no backup: {}", bak_path.display());
     }
-    std::fs::copy(&bak_path, &info.asar_path).context("restore asar failed")?;
+    std::fs::copy(&bak_path, &asar_path).context("restore asar failed")?;
     std::fs::remove_file(&bak_path).context("remove backup failed")?;
     Ok(())
 }

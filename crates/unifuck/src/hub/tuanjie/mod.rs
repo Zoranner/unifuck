@@ -1,6 +1,6 @@
 //! Tuanjie Hub patch strategy.
 
-pub(crate) mod hub;
+pub(crate) mod strategy;
 
 use crate::hub::asar::AsarArchive;
 use crate::hub::strategy::PatchStrategy;
@@ -11,7 +11,7 @@ use crate::hub::strategy::PatchStrategy;
 /// `applies_to` check to bail loudly when the archive does not look like a
 /// Tuanjie Hub.
 pub(crate) fn detect_strategy(asar: &AsarArchive) -> anyhow::Result<Box<dyn PatchStrategy>> {
-    let strategy = hub::TuanjieHubStrategy;
+    let strategy = strategy::TuanjieHubStrategy;
     if strategy.applies_to(asar) {
         return Ok(Box::new(strategy));
     }

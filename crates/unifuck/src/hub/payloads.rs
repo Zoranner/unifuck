@@ -46,7 +46,7 @@ pub(crate) fn wrap_awaiter(body: &str) -> String {
 /// ```
 ///
 /// `body` should already be indented to 8 spaces (the method inner level).
-pub(crate) fn wrap_naked_async(body: &str) -> String {
+pub(crate) fn wrap_async_body(body: &str) -> String {
     format!("{{\n{body}\n    }}")
 }
 
@@ -66,11 +66,11 @@ mod tests {
     }
 
     #[test]
-    fn wrap_naked_async_matches_legacy_is_license_valid() {
+    fn wrap_async_body_matches_legacy_is_license_valid() {
         let expected = r#"{
         return true;
     }"#;
-        let got = wrap_naked_async("        return true;");
+        let got = wrap_async_body("        return true;");
         assert_eq!(got, expected);
     }
 

@@ -1,6 +1,6 @@
 use crate::hub::asar::{self, AsarArchive};
 use crate::hub::patcher::replace_fn_body;
-use crate::hub::payloads::{wrap_naked_async, FAKE_USER_FIELDS};
+use crate::hub::payloads::{wrap_async_body, FAKE_USER_FIELDS};
 use crate::hub::strategy::PatchStrategy;
 use anyhow::Context;
 
@@ -64,18 +64,18 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
     let mut result = content.to_string();
 
     // 1. Patch isLicenseValid() → return true
-    let new_is_valid = wrap_naked_async("        return true;");
+    let new_is_valid = wrap_async_body("        return true;");
     result = replace_fn_body(&result, "isLicenseValid(", &new_is_valid)
         .context("patch isLicenseValid failed")?;
 
     // 2. Patch isUserSignedIn() → return true
     // In 3.18: checks `this.userInfo?.foreignKey`
-    let new_signed_in = wrap_naked_async("        return true;");
+    let new_signed_in = wrap_async_body("        return true;");
     result = replace_fn_body(&result, "isUserSignedIn(", &new_signed_in)
         .context("patch isUserSignedIn failed")?;
 
     // 3. Patch getValidEntitlementGroups() → return fake Pro license
-    let new_entitlements = wrap_naked_async(
+    let new_entitlements = wrap_async_body(
         "        return [{
             startDate: new Date('1970-01-01T00:00:00.000Z'),
             expirationDate: new Date('9999-01-01T08:00:00.000Z'),
@@ -88,7 +88,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
 
     // 4. Patch constructor() — inject fake userInfo
     // In 3.18, constructor has many DI params: (loggerFactory, windowActions, runtimePowerMonitor, gitCredentialManager, tokenManager)
-    let new_constructor = wrap_naked_async(&format!(
+    let new_constructor = wrap_async_body(&format!(
         "        super();
         this.#logger = loggerFactory.createLogger(\"AuthService\");
         this.#windowActions = windowActions;
@@ -121,7 +121,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
 
     // 5. Patch restoreAuthState() — set loggedIn and broadcast events
     // In 3.18: uses mainContainer.get(IEventBroadcasterId).broadcast() and getChannel("app").publish()
-    let new_restore = wrap_naked_async(
+    let new_restore = wrap_async_body(
         "        this.connectInfo.ready = true;
         this.connectInfo.loggedIn = true;
         this.connectInfo.initialized = true;
@@ -138,14 +138,14 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
 
     // 6. Patch getInstance() on LicensingSdk → return null
     // This prevents the actual licensing SDK from being used
-    let new_get_instance = wrap_naked_async("        return null;");
+    let new_get_instance = wrap_async_body("        return null;");
     result = replace_fn_body(&result, "getInstance(", &new_get_instance)
         .context("patch getInstance failed")?;
 
     // 7. Patch fetchVariants() to skip network call in airgapped environments
     // FeatureFlagsService.fetchVariants() makes HTTP request to Amplitude Experiment API
     // which times out in airgapped/intranet-only environments (15s timeout + retries = minutes)
-    let new_fetch_variants = wrap_naked_async(
+    let new_fetch_variants = wrap_async_body(
         "        this.#logger.info(\"Fetching feature flags (skipped - offline mode)\");
         const user = await this.getExperimentUser();
         if (!user.user_id && !user.device_id) {
@@ -168,7 +168,7 @@ fn patch_bundled_app(content: &str) -> anyhow::Result<String> {
     // 8. Patch AuthService.getOrganizations() to return empty array (prevent hanging in airgapped environments)
     // AuthService.getOrganizations() calls cloudCore.getOrganizations() which makes axios call without timeout
     // In airgapped environments, this hangs waiting for TCP connection timeout (~18 seconds)
-    let new_get_organizations = wrap_naked_async(
+    let new_get_organizations = wrap_async_body(
         "        this.#logger.debug(\"Organization data has been requested from AuthService\");
         if (!this.connectInfo.loggedIn) throw new Error(\"User is not logged in\");
         if (this.userOrgs !== null) {
@@ -349,7 +349,7 @@ class CloudCoreApiClient {
         eprintln!("✓ Found bundle: {}", bundle_name);
     }
 
-    /// Verify the new `wrap_naked_async` + inline-userInfo emit byte-identical
+    /// Verify the new `wrap_async_body` + inline-userInfo emit byte-identical
     /// output to the legacy hardcoded constructor body. Guards against drift
     /// during refactors.
     #[test]
@@ -382,7 +382,7 @@ class CloudCoreApiClient {
             createdAt: "1970-01-01T00:00:00.000Z",
         };
     }"#;
-        let built = wrap_naked_async(&format!(
+        let built = wrap_async_body(&format!(
             "        super();
         this.#logger = loggerFactory.createLogger(\"AuthService\");
         this.#windowActions = windowActions;

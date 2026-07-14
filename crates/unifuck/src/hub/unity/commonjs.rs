@@ -1,6 +1,6 @@
 use crate::hub::asar::{self, AsarArchive};
 use crate::hub::patcher::replace_fn_body;
-use crate::hub::payloads::{wrap_awaiter, wrap_naked_async};
+use crate::hub::payloads::{wrap_async_body, wrap_awaiter};
 use crate::hub::strategy::PatchStrategy;
 use anyhow::Context;
 
@@ -134,7 +134,7 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
 
 fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
     // 1. Replace isUserSignedIn() → return true (3.7+ only)
-    let new_signed_in = wrap_naked_async("        return true;");
+    let new_signed_in = wrap_async_body("        return true;");
     let after_signed_in = match replace_fn_body(content, "isUserSignedIn(", &new_signed_in) {
         Some(s) => s,
         None => content.to_string(),
@@ -259,7 +259,7 @@ mod tests {
         let legacy = r#"{
         return true;
     }"#;
-        let built = wrap_naked_async("        return true;");
+        let built = wrap_async_body("        return true;");
         assert_eq!(built, legacy);
     }
 }

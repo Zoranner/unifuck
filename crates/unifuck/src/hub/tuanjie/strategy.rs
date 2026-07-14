@@ -1,6 +1,6 @@
 use crate::hub::asar::{self, AsarArchive};
 use crate::hub::patcher::replace_fn_body;
-use crate::hub::payloads::{wrap_awaiter, wrap_naked_async, FAKE_USER_FIELDS};
+use crate::hub::payloads::{wrap_async_body, wrap_awaiter, FAKE_USER_FIELDS};
 use crate::hub::strategy::PatchStrategy;
 use anyhow::Context;
 use serde_json::Value;
@@ -192,7 +192,7 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
 /// Fat stub mirroring the Unity CommonJS strategy — safe defaults so that
 /// `getInstance().getAllEntitlementGroups()` and similar chains do not throw.
 fn licensing_sdk_get_instance_stub() -> String {
-    wrap_naked_async(
+    wrap_async_body(
         "        return {
             getConnectedPipeName() { return ''; },
             connect() { return Promise.resolve(false); },
@@ -235,7 +235,7 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
     let mut current = content.to_string();
     let mut applied = 0usize;
 
-    let new_constructor = wrap_naked_async(&format!(
+    let new_constructor = wrap_async_body(&format!(
         "        super();
         this.userInfo = undefined;
         this.codeVerifier = '';
@@ -263,7 +263,7 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
         eprintln!("warning: AuthService constructor signature missed");
     }
 
-    let new_is_signed_in = wrap_naked_async("        return true;");
+    let new_is_signed_in = wrap_async_body("        return true;");
     if let Some(s) = replace_fn_body(&current, "isUserSignedIn(", &new_is_signed_in) {
         current = s;
         applied += 1;
@@ -314,7 +314,7 @@ mod tests {
     fn auth_service_constructor_injects_identifier() {
         // identifier field is required because real Tuanjie's isUserSignedIn
         // checks Boolean(userInfo?.identifier).
-        let built = wrap_naked_async(&format!(
+        let built = wrap_async_body(&format!(
             "        super();
         this.userInfo = {{
 {FAKE_USER_FIELDS}
