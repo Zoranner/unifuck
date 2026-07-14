@@ -22,7 +22,9 @@ pub struct AppState {
 
 impl AppState {
     pub fn new() -> Self {
-        let groups = core::scan_groups();
+        let config = discovery::load_config();
+        let custom_hubs = config.custom_hubs;
+        let groups = core::scan_groups(&custom_hubs);
         let n = groups.len();
 
         let group_selected = vec![false; n];
@@ -31,14 +33,11 @@ impl AppState {
             .map(|g| crate::hub::is_hub_patched(&g.hub.root))
             .collect();
 
-        let config = discovery::load_config();
-        let custom_hub_paths = config.custom_hubs;
-
         Self {
             groups,
             group_selected,
             group_patched,
-            custom_hubs: custom_hub_paths,
+            custom_hubs,
             running: false,
             done: false,
             success_count: 0,
@@ -80,7 +79,7 @@ impl AppState {
         };
         let _ = discovery::save_config(&config);
 
-        let groups = core::scan_groups();
+        let groups = core::scan_groups(&self.custom_hubs);
         self.groups = groups;
         self.group_selected = vec![false; self.groups.len()];
         self.group_patched = self

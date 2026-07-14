@@ -88,7 +88,6 @@ pub(crate) fn save_config(config: &Config) -> std::io::Result<()> {
 /// Strategy:
 /// 1. Check registry for exact install path
 /// 2. Enumerate `<drive>:\Program Files\<hub_name>` for each available drive
-/// 3. User-configured custom hub paths from %APPDATA%\unifuck\config.json
 ///
 /// Results are deduplicated and verified by checking `resources\app.asar`.
 pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
@@ -107,19 +106,6 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
     // 2. Program Files on all drives
     for drive in available_drive_roots() {
         let candidate = drive.join("Program Files").join(hub_name);
-        let canonical = normalize_path(&candidate);
-        if seen.insert(canonical) && candidate.join(asar_rel).exists() {
-            roots.push(candidate);
-        }
-    }
-
-    // 3. Custom paths from user config
-    let config = load_config();
-    for (name, path) in &config.custom_hubs {
-        if name != hub_name {
-            continue;
-        }
-        let candidate = PathBuf::from(path);
         let canonical = normalize_path(&candidate);
         if seen.insert(canonical) && candidate.join(asar_rel).exists() {
             roots.push(candidate);
