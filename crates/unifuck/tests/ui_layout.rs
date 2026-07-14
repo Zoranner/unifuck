@@ -3,7 +3,7 @@ use std::fs;
 #[test]
 fn application_icon_is_wired_to_window_and_executable() {
     let app_window = fs::read_to_string("ui/app-window.slint").unwrap();
-    let status_bar = fs::read_to_string("ui/layouts/status-bar.slint").unwrap();
+    let status_bar = fs::read_to_string("ui/layouts/header-bar.slint").unwrap();
     let build_script = fs::read_to_string("build.rs").unwrap();
     let manifest = fs::read_to_string("Cargo.toml").unwrap();
 
@@ -28,7 +28,7 @@ fn application_icon_is_wired_to_window_and_executable() {
 
 #[test]
 fn header_drag_area_is_limited_to_title_region() {
-    let source = fs::read_to_string("ui/layouts/status-bar.slint").unwrap();
+    let source = fs::read_to_string("ui/layouts/header-bar.slint").unwrap();
     let drag_area = source.split("drag-area := TouchArea").nth(1).unwrap();
     let drag_area = drag_area.split("// 标题").next().unwrap();
 
@@ -49,12 +49,9 @@ fn header_drag_area_is_limited_to_title_region() {
 #[test]
 fn action_bar_does_not_expand_over_content() {
     let action_bar = fs::read_to_string("ui/layouts/action-bar.slint").unwrap();
-    let neon_button = fs::read_to_string("ui/effects/neon-button.slint").unwrap();
 
     assert!(action_bar.contains("min-height: 44px;"));
     assert!(action_bar.contains("max-height: 44px;"));
     assert!(action_bar.contains("vertical-stretch: 0;"));
-    assert!(action_bar.contains("disabled: root.disabled;"));
-    assert!(neon_button.contains("enabled: !root.disabled;"));
-    assert!(neon_button.contains("btn-area.has-hover && !root.disabled"));
+    assert!(action_bar.contains("working || !has-selection;"));
 }
