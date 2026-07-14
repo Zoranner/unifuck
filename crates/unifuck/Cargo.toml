@@ -17,6 +17,7 @@ base64 = "0.22"
 pem = "3"
 slint = "1"
 serde_json = { version = "1", features = ["preserve_order"] }
+rfd = "0.15"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { workspace = true, features = [
