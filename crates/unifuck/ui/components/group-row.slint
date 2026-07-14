@@ -1,15 +1,16 @@
 import { Theme } from "../styles/theme.slint";
 import { RGBSplitText } from "../effects/rgb-split-text.slint";
 
-// 扁平版本行: 左 4px 状态色条 (恒色) + 霓虹 checkbox + 右侧状态徽章
-export component VersionRow inherits Rectangle {
+// 一行: Hub (checkbox + 粗体) 或 Editor (缩进 + 版本号)
+export component GroupRow inherits Rectangle {
     in-out property <bool> selected;
     in property <string> version;
     in property <string> path;
     in property <string> status-label;
     in property <color> status-color;
-    in property <bool> locked;
+    in property <bool> working;
     in property <bool> disabled;
+    in property <bool> is-group-header;
     callback toggled;
 
     height: 44px;
@@ -27,10 +28,10 @@ export component VersionRow inherits Rectangle {
     area := TouchArea {
         width: 100%; height: 100%;
         mouse-cursor: root.disabled ? default : pointer;
-        clicked => { if !root.locked && !root.disabled { root.toggled(); } }
+        clicked => { if !root.working && !root.disabled { root.toggled(); } }
     }
 
-    // 左 4px 状态色条 (始终用 status-color, hover 时发光加强)
+    // 左 4px 状态色条
     Rectangle {
         x: 0; y: 0;
         width: 4px; height: 100%;
@@ -41,12 +42,11 @@ export component VersionRow inherits Rectangle {
         drop-shadow-offset-y: 0;
     }
 
-    // 常规内容: 始终可见, RGB 色彩分离层叠加其上
-    normal-content := Rectangle {
+    content := Rectangle {
         width: 100%; height: 100%;
 
-        // 霓虹 checkbox (空心方框, 选中=品红填充)
-        Rectangle {
+        // checkbox (仅 Hub 行显示)
+        if root.is-group-header : Rectangle {
             x: 14px; y: (parent.height - Theme.checkbox-size) / 2;
             width: Theme.checkbox-size; height: Theme.checkbox-size;
             border-radius: 1px;
@@ -70,7 +70,7 @@ export component VersionRow inherits Rectangle {
             }
         }
 
-        // RGB 色彩分离层: hover 时显示, 红 +1px / 蓝 -1px (在原字下面, z-order 更低)
+        // RGB 色彩分离层
         RGBSplitText {
             x: 40px;
             y: 4px;
@@ -80,27 +80,30 @@ export component VersionRow inherits Rectangle {
             text: root.version;
             font-family: Theme.font-mono;
             font-size: Theme.font-lg;
-            font-weight: 700;
+            font-weight: root.is-group-header ? 800 : 600;
             text-color: transparent;
             offset: 1px;
             active: !root.disabled && area.has-hover;
         }
 
-        // 版本号 (大号青色等宽, z-order 最高, 盖住 RGB 层)
+        // 主文字
         version-text := Text {
-            x: 40px; y: 4px;
+            x: 40px;
+            y: 4px;
             width: parent.width - 160px;
             height: 20px;
             text: root.version;
             font-family: Theme.font-mono;
-            font-size: Theme.font-lg; font-weight: 700;
+            font-size: Theme.font-lg;
+            font-weight: root.is-group-header ? 800 : 600;
             color: (!root.disabled && area.has-hover) ? Theme.cyan-bright : Theme.cyan-50;
             vertical-alignment: center;
         }
 
-        // 路径 (次级灰紫色)
+        // 子行: Hub = 路径, Editor = 路径
         Text {
-            x: 40px; y: 23px;
+            x: 40px;
+            y: 23px;
             width: parent.width - 160px;
             height: 18px;
             text: root.path;
@@ -112,20 +115,16 @@ export component VersionRow inherits Rectangle {
         }
     }
 
-    // 状态徽章 (右侧, 半透明填充 + 边框 + 亮文字, 选中/hover 时脉冲发光)
+    // 状态徽章
     Rectangle {
-        // 脉冲动画: 周期 2s, sin 平滑, 仅选中或 hover 时激活
         in property <bool> pulse-active: root.selected || (!root.disabled && area.has-hover);
-        // phase 在 [0, 1) 循环, 对应 2π 弧度
         in-out property <float> phase: 0;
-        // 脉冲因子: 激活时 sin 曲线 0↔1, 非激活时固定 0.5 (静态中间值)
         in property <float> pulse: pulse-active ? (sin(phase * 360deg) + 1) / 2 : 0.5;
 
         Timer {
             interval: 33ms;
             running: true;
             triggered => {
-                // 33ms / 2000ms = 0.0165, 取模保证 [0,1)
                 phase = mod(phase + 0.0165, 1);
             }
         }

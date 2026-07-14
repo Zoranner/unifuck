@@ -3,12 +3,13 @@ import { NeonButton } from "../effects/neon-button.slint";
 
 // 底栏: 居中霓虹发光按钮 + 间歇 glitch (RGB 分裂)
 export component ActionBar inherits Rectangle {
-    in property <bool> busy;
+    in property <bool> working;
     in property <bool> is-unpatch;
     in property <bool> has-selection;
     callback activate();
+    callback add_hub_folder();
 
-    property <bool> disabled: busy || !has-selection;
+    property <bool> disabled: working || !has-selection;
 
     // === Glitch 状态 (参考 HeaderBar: 帧计数 + 双素数模判定, 伪随机间歇) ===
     // 100ms × 600 帧 = 60s 完整周期; mod 29 ≈ 2.9s, mod 41 ≈ 4.1s, 各持续 100ms
@@ -42,10 +43,21 @@ export component ActionBar inherits Rectangle {
 
         Rectangle { horizontal-stretch: 1; }
 
+        // "+" 按钮: 添加自定义 Hub 目录
+        NeonButton {
+            width: 28px;
+            height: 28px;
+            text: "+";
+            disabled: root.working;
+            glitch-frame: root.glitch-frame;
+            glitch-active: root.glitch-active;
+            clicked => { root.add_hub_folder(); }
+        }
+
         NeonButton {
             width: 150px;
             height: 28px;
-            text: root.busy
+            text: root.working
                 ? (root.is-unpatch ? "UN-PATCHING..." : "PATCHING...")
                 : (root.is-unpatch ? "UN-PATCH" : "PATCH");
             disabled: root.disabled;
