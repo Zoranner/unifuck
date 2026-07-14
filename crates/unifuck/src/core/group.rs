@@ -115,9 +115,12 @@ pub fn scan_groups(custom_hubs: &HashMap<String, String>) -> Vec<InstallGroup> {
         // 2. 自定义路径兜底：自动扫描无结果时尝试
         if let Some(custom_path) = custom_hubs.get(hub_name) {
             let custom_root = std::path::PathBuf::from(custom_path);
-            let asar_path = custom_root.join(asar_rel);
-            if let Some(group) = build_hub_group(vendor, &custom_root, &asar_path) {
-                groups.push(group);
+            let hub_exe = custom_root.join(format!("{}.exe", hub_name));
+            if hub_exe.exists() {
+                let asar_path = custom_root.join(asar_rel);
+                if let Some(group) = build_hub_group(vendor, &custom_root, &asar_path) {
+                    groups.push(group);
+                }
             }
         }
     }
