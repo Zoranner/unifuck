@@ -55,14 +55,6 @@ impl Vendor {
         }
     }
 
-    /// Program Files 下独立 Editor 目录前缀 ("Unity " / "Tuanjie ")。
-    pub fn editor_dir_prefix(self) -> &'static str {
-        match self {
-            Vendor::Unity => "Unity ",
-            Vendor::Tuanjie => "Tuanjie ",
-        }
-    }
-
     /// 用于排序的稳定顺序: Unity 在前, Tuanjie 在后。
     pub fn sort_order(self) -> u8 {
         match self {

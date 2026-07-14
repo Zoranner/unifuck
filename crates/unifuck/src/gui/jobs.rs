@@ -1,5 +1,5 @@
 use crate::core;
-use crate::core::EditorInstall;
+use crate::core::EditorInfo;
 use crate::gui::app::AppState;
 use crate::hub::{self, HubInfo};
 use crate::vendor::Vendor;
@@ -8,10 +8,11 @@ use std::sync::mpsc;
 use std::thread;
 
 struct JobTargets {
-    selected: Vec<EditorInstall>,
-    all_installs: Vec<EditorInstall>,
-    hubs: Vec<HubInfo>,
-    hub_selected: Vec<bool>,
+    selected_editors: Vec<EditorInfo>,
+    all_editors: Vec<EditorInfo>,
+    selected_hubs: Vec<HubInfo>,
+    all_hubs: Vec<HubInfo>,
+    patch_shared: bool,
     is_unpatch: bool,
 }
 
@@ -45,25 +46,37 @@ fn collect_targets(app: &AppState) -> Option<JobTargets> {
     }
 
     let mode = app.selection_mode?;
-    let selected = app
-        .installs
-        .iter()
-        .enumerate()
-        .filter(|(idx, _)| *app.selected.get(*idx).unwrap_or(&false))
-        .map(|(_, inst)| inst.clone())
-        .collect::<Vec<_>>();
 
-    let any_hub_selected = app.hub_selected.iter().any(|s| *s);
+    let mut selected_editors = Vec::new();
+    let mut selected_hubs = Vec::new();
+    let mut all_editors = Vec::new();
+    let mut all_hubs = Vec::new();
+    let mut patch_shared = false;
 
-    if selected.is_empty() && !any_hub_selected {
+    for (group_idx, group) in app.groups.iter().enumerate() {
+        if app.group_selected.get(group_idx).copied().unwrap_or(false) {
+            selected_hubs.push(group.hub.clone());
+            patch_shared = true;
+            for editor in &group.editors {
+                selected_editors.push(editor.clone());
+            }
+        }
+        for editor in &group.editors {
+            all_editors.push(editor.clone());
+        }
+        all_hubs.push(group.hub.clone());
+    }
+
+    if selected_editors.is_empty() && selected_hubs.is_empty() && !patch_shared {
         return None;
     }
 
     Some(JobTargets {
-        selected,
-        all_installs: app.installs.clone(),
-        hubs: app.hubs.clone(),
-        hub_selected: app.hub_selected.clone(),
+        selected_editors,
+        all_editors,
+        selected_hubs,
+        all_hubs,
+        patch_shared,
         is_unpatch: mode,
     })
 }
@@ -71,7 +84,7 @@ fn collect_targets(app: &AppState) -> Option<JobTargets> {
 fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
-    for inst in &targets.selected {
+    for inst in &targets.selected_editors {
         let label = format!("{} {}", inst.vendor.display_name(), inst.version);
         if core::is_patched(inst) {
             tx.send(format!("TOK  {}  already patched, skipped", label))
@@ -80,13 +93,13 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
             continue;
         }
         tx.send(format!("..  {}  patching DLL...", label)).ok();
-        match core::patch_dll(inst.vendor, &inst.dll_path) {
+        match core::patch_dll(inst.vendor, &inst.dll_path()) {
             Ok(()) => {
                 tx.send(format!("TOK  {}  DLL patched", label)).ok();
                 tx.send(format!("..  {}  patching exe...", label)).ok();
-                match core::patch_exe(&inst.exe_path) {
+                match core::patch_exe(&inst.exe_path()) {
                     Ok(()) => {
-                        if core::is_exe_patched(&inst.exe_path) {
+                        if core::is_exe_patched(&inst.exe_path()) {
                             tx.send(format!("..  {}  exe patched", label)).ok();
                         } else {
                             tx.send(format!("..  {}  exe skipped (no cert)", label))
@@ -99,16 +112,14 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
                     }
                 }
                 if inst.vendor.supports_native_hook() {
-                    if let Some(editor_dir) = inst.exe_path.parent() {
-                        tx.send(format!("..  {}  deploying loader...", label)).ok();
-                        match core::deploy_loader(editor_dir) {
-                            Ok(()) => {
-                                tx.send(format!("..  {}  loader deployed", label)).ok();
-                            }
-                            Err(e) => {
-                                tx.send(format!("..  {}  loader deploy failed: {}", label, e))
-                                    .ok();
-                            }
+                    tx.send(format!("..  {}  deploying loader...", label)).ok();
+                    match core::deploy_loader(&inst.root) {
+                        Ok(()) => {
+                            tx.send(format!("..  {}  loader deployed", label)).ok();
+                        }
+                        Err(e) => {
+                            tx.send(format!("..  {}  loader deploy failed: {}", label, e))
+                                .ok();
                         }
                     }
                 }
@@ -120,46 +131,40 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
         }
     }
 
-    tx.send("..  patching shared licensing client...".into())
-        .ok();
-    match core::patch_shared_licensing_client() {
-        Ok(()) => {
-            if core::is_shared_licensing_client_patched() {
-                tx.send("OK  shared licensing client patched".into()).ok();
-            } else {
-                tx.send("..  shared licensing client skipped (not found)".into())
+    if targets.patch_shared {
+        tx.send("..  patching shared licensing client...".into())
+            .ok();
+        match core::patch_shared_licensing_client() {
+            Ok(()) => {
+                if core::is_shared_licensing_client_patched() {
+                    tx.send("OK  shared licensing client patched".into()).ok();
+                } else {
+                    tx.send("..  shared licensing client skipped (not found)".into())
+                        .ok();
+                }
+            }
+            Err(e) => {
+                tx.send(format!("..  shared licensing client failed: {}", e))
                     .ok();
             }
         }
-        Err(e) => {
-            tx.send(format!("..  shared licensing client failed: {}", e))
-                .ok();
-        }
     }
 
-    for (hub_idx, hub) in targets.hubs.iter().enumerate() {
-        if !*targets.hub_selected.get(hub_idx).unwrap_or(&false) {
-            continue;
-        }
-        if hub::is_hub_patched(&hub.asar_path) {
-            tx.send(format!(
-                "TOK  {} {}  already patched, skipped",
-                hub.name, hub.version
-            ))
-            .ok();
+    for hub in &targets.selected_hubs {
+        let label = format!("{} {}", hub.vendor.hub_name(), hub.version);
+        if hub::is_hub_patched(&hub.root) {
+            tx.send(format!("TOK  {}  already patched, skipped", label))
+                .ok();
             ok = true;
         } else {
-            tx.send(format!("..  {} {}  patching...", hub.name, hub.version))
-                .ok();
+            tx.send(format!("..  {}  patching...", label)).ok();
             match hub::patch_hub(hub) {
                 Ok(()) => {
-                    tx.send(format!("TOK  {} {}  success", hub.name, hub.version))
-                        .ok();
+                    tx.send(format!("TOK  {}  success", label)).ok();
                     ok = true;
                 }
                 Err(e) => {
-                    tx.send(format!("TERR {} {}: {}", hub.name, hub.version, e))
-                        .ok();
+                    tx.send(format!("TERR {}: {}", label, e)).ok();
                 }
             }
         }
@@ -176,13 +181,11 @@ fn run_patch(tx: mpsc::Sender<String>, targets: JobTargets) {
 
 fn vendors_touched(targets: &JobTargets) -> Vec<Vendor> {
     let mut set: HashSet<Vendor> = HashSet::new();
-    for inst in &targets.selected {
+    for inst in &targets.selected_editors {
         set.insert(inst.vendor);
     }
-    for (idx, hub) in targets.hubs.iter().enumerate() {
-        if *targets.hub_selected.get(idx).unwrap_or(&false) {
-            set.insert(hub.vendor);
-        }
+    for hub in &targets.selected_hubs {
+        set.insert(hub.vendor);
     }
     Vendor::all()
         .iter()
@@ -210,7 +213,7 @@ fn deploy_license_and_hosts(tx: &mpsc::Sender<String>, targets: &JobTargets) {
         }
     }
     tx.send("..  writing hosts...".into()).ok();
-    match core::write_hosts_if_needed() {
+    match core::deploy_hosts() {
         Ok(()) => {
             tx.send("OK  hosts updated".into()).ok();
         }
@@ -223,13 +226,13 @@ fn deploy_license_and_hosts(tx: &mpsc::Sender<String>, targets: &JobTargets) {
 fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
     let mut ok = false;
 
-    for inst in &targets.selected {
+    for inst in &targets.selected_editors {
         let label = format!("{} {}", inst.vendor.display_name(), inst.version);
         tx.send(format!("..  {}  un-patching...", label)).ok();
-        match core::unpatch_dll(&inst.dll_path) {
+        match core::unpatch_dll(&inst.dll_path()) {
             Ok(()) => {
                 tx.send(format!("TOK  {}  DLL restored", label)).ok();
-                match core::unpatch_exe(&inst.exe_path) {
+                match core::unpatch_exe(&inst.exe_path()) {
                     Ok(()) => {
                         tx.send(format!("..  {}  exe restored/skipped", label)).ok();
                     }
@@ -239,16 +242,14 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
                     }
                 }
                 if inst.vendor.supports_native_hook() {
-                    if let Some(editor_dir) = inst.exe_path.parent() {
-                        tx.send(format!("..  {}  reverting loader...", label)).ok();
-                        match core::revert_loader(editor_dir) {
-                            Ok(()) => {
-                                tx.send(format!("..  {}  loader reverted", label)).ok();
-                            }
-                            Err(e) => {
-                                tx.send(format!("..  {}  loader revert failed: {}", label, e))
-                                    .ok();
-                            }
+                    tx.send(format!("..  {}  reverting loader...", label)).ok();
+                    match core::revert_loader(&inst.root) {
+                        Ok(()) => {
+                            tx.send(format!("..  {}  loader reverted", label)).ok();
+                        }
+                        Err(e) => {
+                            tx.send(format!("..  {}  loader revert failed: {}", label, e))
+                                .ok();
                         }
                     }
                 }
@@ -260,33 +261,30 @@ fn run_unpatch(tx: mpsc::Sender<String>, targets: JobTargets) {
         }
     }
 
-    tx.send("..  un-patching shared licensing client...".into())
-        .ok();
-    match core::unpatch_shared_licensing_client() {
-        Ok(()) => {
-            tx.send("OK  shared licensing client restored".into()).ok();
-        }
-        Err(e) => {
-            tx.send(format!("..  shared licensing client restore failed: {}", e))
-                .ok();
+    if targets.patch_shared {
+        tx.send("..  un-patching shared licensing client...".into())
+            .ok();
+        match core::unpatch_shared_licensing_client() {
+            Ok(()) => {
+                tx.send("OK  shared licensing client restored".into()).ok();
+            }
+            Err(e) => {
+                tx.send(format!("..  shared licensing client restore failed: {}", e))
+                    .ok();
+            }
         }
     }
 
-    for (hub_idx, hub) in targets.hubs.iter().enumerate() {
-        if !*targets.hub_selected.get(hub_idx).unwrap_or(&false) {
-            continue;
-        }
-        tx.send(format!("..  {} {}  un-patching...", hub.name, hub.version))
-            .ok();
+    for hub in &targets.selected_hubs {
+        let label = format!("{} {}", hub.vendor.hub_name(), hub.version);
+        tx.send(format!("..  {}  un-patching...", label)).ok();
         match hub::unpatch_hub(hub) {
             Ok(()) => {
-                tx.send(format!("TOK  {} {}  restored", hub.name, hub.version))
-                    .ok();
+                tx.send(format!("TOK  {}  restored", label)).ok();
                 ok = true;
             }
             Err(e) => {
-                tx.send(format!("TERR {} {}: {}", hub.name, hub.version, e))
-                    .ok();
+                tx.send(format!("TERR {}: {}", label, e)).ok();
             }
         }
     }
@@ -306,15 +304,15 @@ fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &Job
 
     for vendor in Vendor::all().iter().copied() {
         let editor_left = targets
-            .all_installs
+            .all_editors
             .iter()
             .filter(|i| i.vendor == vendor)
-            .any(|i| core::is_patched(i) || core::is_exe_patched(&i.exe_path));
+            .any(|i| core::is_patched(i) || core::is_exe_patched(&i.exe_path()));
         let hub_left = targets
-            .hubs
+            .all_hubs
             .iter()
             .filter(|h| h.vendor == vendor)
-            .any(|h| hub::is_hub_patched(&h.asar_path));
+            .any(|h| hub::is_hub_patched(&h.root));
 
         if !editor_left && !hub_left {
             let v = vendor.display_name();
@@ -334,7 +332,7 @@ fn cleanup_globals_if_no_targets_remain(tx: &mpsc::Sender<String>, targets: &Job
 
     if !anything_left {
         tx.send("..  cleaning hosts...".into()).ok();
-        match core::clean_hosts() {
+        match core::remove_hosts() {
             Ok(()) => {
                 tx.send("OK  hosts cleaned".into()).ok();
                 tx.send("META cleaned-globals".into()).ok();

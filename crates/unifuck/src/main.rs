@@ -71,7 +71,7 @@ fn main() -> anyhow::Result<()> {
 
         let ds = drag_state.clone();
         let w = window.as_weak();
-        window.on_start_window_drag(move || {
+        window.on_drag_start(move || {
             let Some(win) = w.upgrade() else {
                 return;
             };
@@ -88,7 +88,7 @@ fn main() -> anyhow::Result<()> {
 
         let ds = drag_state.clone();
         let w = window.as_weak();
-        window.on_drag_window(move || {
+        window.on_drag_move(move || {
             let Some(win) = w.upgrade() else {
                 return;
             };
