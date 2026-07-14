@@ -9,7 +9,7 @@ use std::path::Path;
 use crate::vendor::Vendor;
 
 use super::base64_lines;
-use super::install::EditorInstall;
+use super::group::EditorInfo;
 
 pub use exe::{is_exe_patched, patch_exe, unpatch_exe};
 pub use shared_client::{
@@ -40,8 +40,8 @@ pub fn unpatch_dll(dll_path: &Path) -> anyhow::Result<()> {
 /// in the DLL contents.
 /// Tuanjie: `.dll.bak` existence only (UTF-16LE PEM contents are not
 /// detectable via base64 line matching).
-pub fn is_patched(install: &EditorInstall) -> bool {
-    let dll_path = install.dll_path.as_path();
+pub fn is_patched(install: &EditorInfo) -> bool {
+    let dll_path = install.dll_path();
     if dll_path.with_extension("dll.bak").exists() {
         return true;
     }
@@ -50,7 +50,7 @@ pub fn is_patched(install: &EditorInstall) -> bool {
         Vendor::Tuanjie => false,
         Vendor::Unity => {
             if let Ok(data) = std::fs::read(dll_path) {
-                if let Ok(pem0) = pem::parse(unity::MOD_CERT_PEM) {
+                if let Ok(pem0) = pem::parse(unity::UNITY_MOD_CERT_PEM) {
                     let b64 = base64_lines(pem0.contents());
                     if let Some(line) = b64.lines().next() {
                         return data.windows(line.len()).any(|w| w == line.as_bytes());

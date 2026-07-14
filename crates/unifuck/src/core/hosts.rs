@@ -15,10 +15,10 @@ const HOSTS_ENTRIES: &str = "\n\
 127.0.0.1 tuanjie.cn\n\
 # unifuck-end\n";
 
-/// Idempotent: strip any pre-existing unifuck block (even if a previous
-/// version wrote it without an end marker), then append the current entries.
-/// If the resulting file matches the on-disk content exactly, no write.
-pub fn write_hosts_if_needed() -> anyhow::Result<()> {
+/// 以 # unifuck 为标记, idempotent 写入 hosts 屏蔽条目。
+/// 有标记则跳过，没有则追加。
+/// 写入前备份 hosts 为 .bak (仅首次)。
+pub fn deploy_hosts() -> anyhow::Result<()> {
     let content = std::fs::read_to_string(HOSTS_PATH)
         .with_context(|| format!("read failed: {}", HOSTS_PATH))?;
 
@@ -44,8 +44,8 @@ pub fn write_hosts_if_needed() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Strip the unifuck block from hosts. Robust to missing end marker.
-pub fn clean_hosts() -> anyhow::Result<()> {
+/// 删除 unifuck 屏蔽块，恢复 hosts 原状。
+pub fn remove_hosts() -> anyhow::Result<()> {
     let content = std::fs::read_to_string(HOSTS_PATH)
         .with_context(|| format!("read failed: {}", HOSTS_PATH))?;
     let stripped = strip_unifuck_block(&content);
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn strip_handles_full_block_with_end_marker() {
-        // Realistic shape: `write_hosts_if_needed` always prepends a leading
+        // Realistic shape: `deploy_hosts` always prepends a leading
         // `\n` to `HOSTS_ENTRIES`, so a written block is always preceded by
         // two newlines (file's natural trailing `\n` + our injected `\n`).
         let input = "127.0.0.1 localhost\n\n\

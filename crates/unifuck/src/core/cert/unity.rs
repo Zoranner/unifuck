@@ -3,9 +3,9 @@ use std::path::Path;
 
 use super::super::base64_lines;
 
-pub(super) const ORIG_CERT_PEM: &[u8] =
+pub(super) const UNITY_ORIG_CERT_PEM: &[u8] =
     include_bytes!("../../../keys/orig/Unity.Licensing.EntitlementResolver.Unity.cer");
-pub(super) const MOD_CERT_PEM: &[u8] =
+pub(super) const UNITY_MOD_CERT_PEM: &[u8] =
     include_bytes!("../../../keys/mod/Unity.Licensing.EntitlementResolver.Unity.cer");
 
 /// 在字节数组中搜索 `old` 并原地替换为 `new`。
@@ -38,8 +38,8 @@ fn replace_bytes_in_place(data: &mut [u8], old: &[u8], new: &[u8]) {
 ///
 /// 返回 `true` 表示至少替换了一处, `false` 表示数据中未发现原始证书。
 pub(super) fn apply_cert_replacement(data: &mut [u8]) -> anyhow::Result<bool> {
-    let pem_orig = pem::parse(ORIG_CERT_PEM).context("parse original cert failed")?;
-    let pem_mod = pem::parse(MOD_CERT_PEM).context("parse modified cert failed")?;
+    let pem_orig = pem::parse(UNITY_ORIG_CERT_PEM).context("parse original cert failed")?;
+    let pem_mod = pem::parse(UNITY_MOD_CERT_PEM).context("parse modified cert failed")?;
     let der_orig = pem_orig.contents();
     let der_mod = pem_mod.contents();
 

@@ -2,16 +2,16 @@ use std::path::Path;
 
 use anyhow::Context;
 
-/// Forwarder DLL name our cdylib must masquerade as. Tuanjie.exe statically
+/// DLL name our forwarder cdylib must masquerade as. Tuanjie.exe statically
 /// imports `VerQueryValueW` from VERSION.dll, so Windows resolves that name
 /// against the Editor directory before falling through to System32.
-pub const FORWARDER_NAME: &str = "version.dll";
+pub const HOOK_TARGET_DLL: &str = "version.dll";
 
 const LOADER_DLL_BYTES: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/unifuck_loader.dll"));
 
 fn target_paths(editor_dir: &Path) -> (std::path::PathBuf, std::path::PathBuf) {
-    let target = editor_dir.join(FORWARDER_NAME);
-    let bak = editor_dir.join(format!("{FORWARDER_NAME}.bak"));
+    let target = editor_dir.join(HOOK_TARGET_DLL);
+    let bak = editor_dir.join(format!("{HOOK_TARGET_DLL}.bak"));
     (target, bak)
 }
 

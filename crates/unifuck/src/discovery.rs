@@ -1,5 +1,5 @@
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 // ── Drive Discovery ────────────────────────────────────────────
 
@@ -18,6 +18,68 @@ pub(crate) fn available_drive_roots() -> Vec<PathBuf> {
     roots
 }
 
+// ── Config Persistence ─────────────────────────────────────────
+
+/// User configuration stored at `%APPDATA%\unifuck\config.json`.
+pub(crate) struct Config {
+    pub custom_hubs: std::collections::HashMap<String, String>,
+}
+
+/// Load config from `%APPDATA%\unifuck\config.json`.
+/// Returns default (empty) config if the file does not exist or cannot be parsed.
+pub(crate) fn load_config() -> Config {
+    use std::collections::HashMap;
+
+    let empty = Config {
+        custom_hubs: HashMap::new(),
+    };
+    let appdata = match std::env::var("APPDATA") {
+        Ok(v) => PathBuf::from(v),
+        Err(_) => return empty,
+    };
+    let config_path = appdata.join("unifuck").join("config.json");
+    let content = match std::fs::read_to_string(&config_path) {
+        Ok(c) => c,
+        Err(_) => return empty,
+    };
+    let value: serde_json::Value = match serde_json::from_str(&content) {
+        Ok(v) => v,
+        Err(_) => return empty,
+    };
+    let map = value
+        .get("custom_hub_paths")
+        .and_then(|v| v.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                .collect()
+        })
+        .unwrap_or_default();
+    Config { custom_hubs: map }
+}
+
+/// Save config to `%APPDATA%\unifuck\config.json`.
+/// Creates the directory if it does not exist.
+pub(crate) fn save_config(config: &Config) -> std::io::Result<()> {
+    let appdata = match std::env::var("APPDATA") {
+        Ok(v) => PathBuf::from(v),
+        Err(_) => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "APPDATA not set",
+            ));
+        }
+    };
+    let dir = appdata.join("unifuck");
+    std::fs::create_dir_all(&dir)?;
+    let config_path = dir.join("config.json");
+    let value = serde_json::json!({
+        "custom_hub_paths": config.custom_hubs,
+    });
+    let content = serde_json::to_string_pretty(&value)?;
+    std::fs::write(&config_path, content)
+}
+
 // ── Hub Discovery ──────────────────────────────────────────────
 
 /// Finds all installations of a hub (e.g., "Unity Hub" or "Tuanjie Hub")
@@ -26,6 +88,7 @@ pub(crate) fn available_drive_roots() -> Vec<PathBuf> {
 /// Strategy:
 /// 1. Check registry for exact install path
 /// 2. Enumerate `<drive>:\Program Files\<hub_name>` for each available drive
+/// 3. User-configured custom hub paths from %APPDATA%\unifuck\config.json
 ///
 /// Results are deduplicated and verified by checking `resources\app.asar`.
 pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
@@ -33,7 +96,7 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     let asar_rel = r"resources\app.asar";
 
-    // Registry first (exact path)
+    // 1. Registry first (exact path)
     if let Some(path) = hub_path_from_registry(hub_name) {
         let canonical = normalize_path(&path);
         if seen.insert(canonical) && path.join(asar_rel).exists() {
@@ -41,9 +104,22 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
         }
     }
 
-    // Program Files on all drives
+    // 2. Program Files on all drives
     for drive in available_drive_roots() {
         let candidate = drive.join("Program Files").join(hub_name);
+        let canonical = normalize_path(&candidate);
+        if seen.insert(canonical) && candidate.join(asar_rel).exists() {
+            roots.push(candidate);
+        }
+    }
+
+    // 3. Custom paths from user config
+    let config = load_config();
+    for (name, path) in &config.custom_hubs {
+        if name != hub_name {
+            continue;
+        }
+        let candidate = PathBuf::from(path);
         let canonical = normalize_path(&candidate);
         if seen.insert(canonical) && candidate.join(asar_rel).exists() {
             roots.push(candidate);
@@ -55,16 +131,8 @@ pub(crate) fn find_hub_roots(hub_name: &str) -> Vec<PathBuf> {
 
 // ── Editor Discovery ───────────────────────────────────────────
 
-/// Reads editor install paths from Hub `editors.json` config files.
-///
-/// Checks both `%APPDATA%\UnityHub\editors.json` and
-/// `%APPDATA%\TuanjieHub\editors.json`.  The JSON format varies:
-/// - `{"version": {"location": "path"}}`
-/// - `{"version": "path"}`
-/// - `[{"location": "path"}]`
-///
-/// Only existing directories are returned.
-pub(crate) fn read_editor_paths_from_config() -> Vec<PathBuf> {
+/// Read editor paths from Hub config for a specific vendor.
+pub(crate) fn read_editor_paths(vendor: crate::vendor::Vendor) -> Vec<PathBuf> {
     let mut paths = Vec::new();
     let mut seen = HashSet::new();
 
@@ -73,24 +141,27 @@ pub(crate) fn read_editor_paths_from_config() -> Vec<PathBuf> {
         Err(_) => return paths,
     };
 
-    for vendor in crate::vendor::Vendor::all() {
-        let config_path = appdata.join(vendor.config_dir_name()).join("editors.json");
-        if let Ok(content) = std::fs::read_to_string(&config_path) {
+    for v in std::iter::once(vendor) {
+        let hub_dir = appdata.join(v.config_dir_name());
+
+        // editors-v2.json (current Hub format)
+        let v2_path = hub_dir.join("editors-v2.json");
+        if let Ok(content) = std::fs::read_to_string(&v2_path) {
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
-                extract_editor_paths(&value, &mut paths, &mut seen);
+                extract_v2_editor_paths(&value, &mut paths, &mut seen);
+            }
+        }
+
+        // editors.json (legacy format)
+        let v1_path = hub_dir.join("editors.json");
+        if let Ok(content) = std::fs::read_to_string(&v1_path) {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(&content) {
+                extract_v1_editor_paths(&value, &mut paths, &mut seen);
             }
         }
     }
 
     paths
-}
-
-/// Returns `<drive>:\Program Files` for each available drive.
-pub(crate) fn program_files_dirs() -> Vec<PathBuf> {
-    available_drive_roots()
-        .into_iter()
-        .map(|root| root.join("Program Files"))
-        .collect()
 }
 
 // ── Internal Helpers ───────────────────────────────────────────
@@ -109,39 +180,76 @@ fn normalize_path(path: &std::path::Path) -> PathBuf {
     }
 }
 
-fn extract_editor_paths(
+/// Add `root` to `paths` if it is a directory and hasn't been seen.
+fn try_add_path(root: &Path, paths: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) {
+    let canonical = normalize_path(root);
+    if seen.insert(canonical) && root.is_dir() {
+        paths.push(root.to_path_buf());
+    }
+}
+
+/// Parse editors-v2.json: `{"data": [{"location": ["C:\\...\\Editor\\Unity.exe"]}]}`
+///
+/// `location` points to the .exe; we derive the Editor root as the parent of
+/// the "Editor" directory containing the .exe.
+fn extract_v2_editor_paths(
+    value: &serde_json::Value,
+    paths: &mut Vec<PathBuf>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    let data = match value.get("data").and_then(|d| d.as_array()) {
+        Some(arr) => arr,
+        None => return,
+    };
+    for item in data {
+        let loc = match item.get("location") {
+            Some(serde_json::Value::Array(arr)) => {
+                arr.first().and_then(|v| v.as_str()).map(|s| s.to_string())
+            }
+            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            _ => None,
+        };
+        if let Some(loc) = loc {
+            // exe path e.g. "C:\Program Files\Unity 6000.4.8f1\Editor\Unity.exe"
+            // root = parent of "Editor" folder
+            let p = PathBuf::from(&loc);
+            let root = p
+                .parent()
+                .and_then(|editor| editor.parent())
+                .map(|r| r.to_path_buf())
+                .unwrap_or(p);
+            try_add_path(&root, paths, seen);
+        }
+    }
+}
+
+/// Parse legacy editors.json formats:
+/// - `{"version": {"location": "path"}}`
+/// - `{"version": "path"}`
+/// - `[{"location": "path"}]`
+fn extract_v1_editor_paths(
     value: &serde_json::Value,
     paths: &mut Vec<PathBuf>,
     seen: &mut HashSet<PathBuf>,
 ) {
     match value {
-        // Object: {"version": {"location": "path"}} or {"version": "path"}
         serde_json::Value::Object(map) => {
             for (_key, val) in map {
                 if let Some(loc) = val.get("location").and_then(|l| l.as_str()) {
-                    add_editor_path(loc, paths, seen);
+                    try_add_path(&PathBuf::from(loc), paths, seen);
                 } else if let Some(loc) = val.as_str() {
-                    add_editor_path(loc, paths, seen);
+                    try_add_path(&PathBuf::from(loc), paths, seen);
                 }
             }
         }
-        // Array: [{"location": "path"}]
         serde_json::Value::Array(arr) => {
             for item in arr {
                 if let Some(loc) = item.get("location").and_then(|l| l.as_str()) {
-                    add_editor_path(loc, paths, seen);
+                    try_add_path(&PathBuf::from(loc), paths, seen);
                 }
             }
         }
         _ => {}
-    }
-}
-
-fn add_editor_path(path_str: &str, paths: &mut Vec<PathBuf>, seen: &mut HashSet<PathBuf>) {
-    let p = PathBuf::from(path_str);
-    let canonical = normalize_path(&p);
-    if seen.insert(canonical) && p.is_dir() {
-        paths.push(p);
     }
 }
 

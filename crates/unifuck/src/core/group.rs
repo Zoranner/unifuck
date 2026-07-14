@@ -1,0 +1,139 @@
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
+
+use crate::hub;
+use crate::hub::HubInfo;
+use crate::vendor::Vendor;
+
+// ── InstallGroup ───────────────────────────────────────────────
+
+pub struct InstallGroup {
+    pub hub: HubInfo,
+    pub editors: Vec<EditorInfo>,
+}
+
+// ── EditorInfo ─────────────────────────────────────────────────
+
+/// Detected Editor installation.
+///
+/// `root` is the Editor directory (e.g. `...\Unity 6000.4.8f1\Editor`).
+/// All other paths derive from `root`.
+#[derive(Clone)]
+pub struct EditorInfo {
+    pub version: String,
+    pub vendor: Vendor,
+    pub root: PathBuf,
+}
+
+impl EditorInfo {
+    pub fn dll_path(&self) -> PathBuf {
+        self.root
+            .join(r"Data\Resources\Licensing\Client")
+            .join(self.vendor.dll_name())
+    }
+
+    pub fn exe_path(&self) -> PathBuf {
+        self.root.join(self.vendor.exe_name())
+    }
+}
+
+// ── Scan helpers ───────────────────────────────────────────────
+
+fn add_if_valid_install(
+    root: &Path,
+    version: &str,
+    installs: &mut Vec<EditorInfo>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    for vendor in Vendor::all().iter().copied() {
+        if let Some(info) = try_find_install_for(root, version, vendor) {
+            if seen.insert(info.root.clone()) {
+                installs.push(info);
+            }
+        }
+    }
+}
+
+fn scan_hub_editor_dir(
+    editor_dir: &Path,
+    installs: &mut Vec<EditorInfo>,
+    seen: &mut HashSet<PathBuf>,
+) {
+    if let Ok(dir) = std::fs::read_dir(editor_dir) {
+        for entry in dir.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                let version = path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "UNKNOWN".to_string());
+                add_if_valid_install(&path, &version, installs, seen);
+            }
+        }
+    }
+}
+
+fn try_find_install_for(root: &Path, version: &str, vendor: Vendor) -> Option<EditorInfo> {
+    let editor_dir = root.join("Editor");
+    let dll = editor_dir
+        .join(r"Data\Resources\Licensing\Client")
+        .join(vendor.dll_name());
+    if dll.exists() {
+        Some(EditorInfo {
+            version: version.to_string(),
+            vendor,
+            root: editor_dir,
+        })
+    } else {
+        None
+    }
+}
+
+// ── Entry point ────────────────────────────────────────────────
+
+/// Scan all Hub installations and group Editor installs under each Hub.
+pub fn scan_groups() -> Vec<InstallGroup> {
+    let mut groups = Vec::new();
+
+    for vendor in Vendor::all().iter().copied() {
+        for hub_root in crate::discovery::find_hub_roots(vendor.hub_name()) {
+            let asar_path = hub_root.join(hub::HUB_ASAR_REL);
+            let hub_info = match hub::hub_info_from_path(vendor, &hub_root, &asar_path) {
+                Some(info) => info,
+                None => continue,
+            };
+
+            let mut editors = Vec::new();
+            let mut seen = HashSet::new();
+            let editor_dir = hub_root.join("Editor");
+            scan_hub_editor_dir(&editor_dir, &mut editors, &mut seen);
+
+            // editors.json for this vendor
+            for editor_path in crate::discovery::read_editor_paths(vendor) {
+                let version = editor_path
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| "UNKNOWN".to_string());
+                add_if_valid_install(&editor_path, &version, &mut editors, &mut seen);
+            }
+
+            groups.push(InstallGroup {
+                hub: hub_info,
+                editors,
+            });
+        }
+    }
+
+    for group in &mut groups {
+        group.editors.sort_by(|a, b| b.version.cmp(&a.version));
+    }
+    groups.sort_by(|a, b| {
+        a.hub
+            .vendor
+            .sort_order()
+            .cmp(&b.hub.vendor.sort_order())
+            .then_with(|| b.hub.version.cmp(&a.hub.version))
+    });
+
+    groups
+}

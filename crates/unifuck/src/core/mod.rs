@@ -1,6 +1,6 @@
 mod cert;
+mod group;
 mod hosts;
-mod install;
 mod license;
 mod loader;
 
@@ -10,8 +10,8 @@ pub use cert::{
     is_exe_patched, is_patched, is_shared_licensing_client_patched, patch_dll, patch_exe,
     patch_shared_licensing_client, unpatch_dll, unpatch_exe, unpatch_shared_licensing_client,
 };
-pub use hosts::{clean_hosts, write_hosts_if_needed};
-pub use install::{scan_installations, EditorInstall};
+pub use group::{scan_groups, EditorInfo, InstallGroup};
+pub use hosts::{deploy_hosts, remove_hosts};
 pub use license::{deploy_license, remove_license, sign_license};
 pub use loader::{deploy as deploy_loader, revert as revert_loader};
 
