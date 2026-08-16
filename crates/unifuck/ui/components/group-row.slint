@@ -17,6 +17,8 @@ export component GroupRow inherits Rectangle {
     horizontal-stretch: 1;
     background: (!root.disabled && area.has-hover) ? Theme.purple-bg-2 : transparent;
     opacity: root.disabled ? 0.35 : 1;
+    property <length> indent: root.is-group-header ? 0px : 18px;
+    property <length> tree-x: 22px;
 
     // 底部 1px 暗紫分隔线
     Rectangle {
@@ -40,6 +42,21 @@ export component GroupRow inherits Rectangle {
         drop-shadow-blur: (!root.disabled && area.has-hover) ? 10px : 4px;
         drop-shadow-offset-x: 0;
         drop-shadow-offset-y: 0;
+    }
+
+    // 树形连接线 (子行)
+    if !root.is-group-header : Rectangle {
+        x: root.tree-x; y: 0;
+        width: 1px; height: 100%;
+        background: Theme.purple-line;
+        opacity: 0.5;
+    }
+    if !root.is-group-header : Rectangle {
+        x: root.tree-x;
+        y: (parent.height - Theme.checkbox-size) / 2 + Theme.checkbox-size / 2 - 0.5px;
+        width: 14px; height: 1px;
+        background: Theme.purple-line;
+        opacity: 0.5;
     }
 
     content := Rectangle {
@@ -72,9 +89,9 @@ export component GroupRow inherits Rectangle {
 
         // RGB 色彩分离层
         RGBSplitText {
-            x: 40px;
+            x: 40px + root.indent;
             y: 4px;
-            width: parent.width - 160px;
+            width: parent.width - 160px - root.indent;
             height: 20px;
             clip: true;
             text: root.version;
@@ -88,9 +105,9 @@ export component GroupRow inherits Rectangle {
 
         // 主文字
         version-text := Text {
-            x: 40px;
+            x: 40px + root.indent;
             y: 4px;
-            width: parent.width - 160px;
+            width: parent.width - 160px - root.indent;
             height: 20px;
             text: root.version;
             font-family: Theme.font-mono;
@@ -102,9 +119,9 @@ export component GroupRow inherits Rectangle {
 
         // 子行: Hub = 路径, Editor = 路径
         Text {
-            x: 40px;
+            x: 40px + root.indent;
             y: 23px;
-            width: parent.width - 160px;
+            width: parent.width - 160px - root.indent;
             height: 18px;
             text: root.path;
             font-family: Theme.font-mono;

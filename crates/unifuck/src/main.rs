@@ -2,6 +2,7 @@
 
 mod c14n;
 mod core;
+mod diag;
 mod discovery;
 mod gui;
 mod hub;

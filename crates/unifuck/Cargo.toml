@@ -32,3 +32,6 @@ slint-build = "1"
 [target.'cfg(windows)'.build-dependencies]
 embed-manifest = "1"
 winresource = "0.1"
+
+[dev-dependencies]
+tempfile = "3"
