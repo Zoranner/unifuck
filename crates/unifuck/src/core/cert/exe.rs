@@ -7,6 +7,9 @@ use super::unity::{UNITY_MOD_CERT_PEM, UNITY_ORIG_CERT_PEM};
 ///
 /// 仅对 Unity 2021 等单体二进制版本有效: 这类 exe 约 73 MB, 内含 LicensingLegacy
 /// 模块与同一份 X.509 证书; Unity 6000+ 的 exe 只是约 282 KB 的启动器, 不含证书。
+/// Tuanjie exe 走 native hook 路线 (jobs.rs 的 `supports_native_hook` 门控),
+/// 不内嵌 Unity 证书, 因此这里匹配不到任何 base64 时静默跳过 ——
+/// 调用方对所有 vendor 无条件调用本函数是安全的。
 ///
 /// 跳过条件 (返回 Ok 但不生成备份):
 /// - exe 不存在

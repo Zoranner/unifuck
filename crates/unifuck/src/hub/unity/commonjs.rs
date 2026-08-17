@@ -75,9 +75,42 @@ impl PatchStrategy for CommonJsStrategy {
 
 // ── Patch Functions for 3.5/3.7 ──────────────────────────────
 
+/// 单文件多函数 patch 的公共骨架: 每个函数独立尝试替换, 全部未命中才报错。
+///
+/// 两侧 vendor 对 Hub 版本漂移的弹性语义在此统一: 部分签名未命中
+/// (例如 Hub 升级后只改了一个函数) 时, 已命中的 patch 仍保留,
+/// 只有全部未命中才判定该文件不适用。
+fn patch_all(content: &str, patches: &[(&str, &str, &str)]) -> anyhow::Result<String> {
+    let mut current = content.to_string();
+    let mut applied = 0usize;
+
+    for (label, anchor, body) in patches {
+        match replace_fn_body(&current, anchor, body) {
+            Some(s) => {
+                current = s;
+                applied += 1;
+            }
+            None => eprintln!("warning: {} signature missed", label),
+        }
+    }
+
+    if applied == 0 {
+        anyhow::bail!("no patches applied");
+    }
+    Ok(current)
+}
+
 fn patch_license_service_js(content: &str) -> anyhow::Result<String> {
     let new_body = wrap_awaiter("            return true;");
-    replace_fn_body(content, "isLicenseValid(", &new_body).context("patch isLicenseValid failed")
+    patch_all(
+        content,
+        &[(
+            "licenseService isLicenseValid",
+            "isLicenseValid(",
+            &new_body,
+        )],
+    )
+    .context("patch licenseService.js failed")
 }
 
 fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
@@ -96,14 +129,19 @@ fn patch_license_core_js(content: &str) -> anyhow::Result<String> {
                 validationErrors: [],
             }];",
     );
-    replace_fn_body(content, "getValidEntitlementGroups(", &new_body)
-        .context("patch getValidEntitlementGroups failed")
+    patch_all(
+        content,
+        &[(
+            "licenseServiceCore getValidEntitlementGroups",
+            "getValidEntitlementGroups(",
+            &new_body,
+        )],
+    )
+    .context("patch licenseServiceCore.js failed")
 }
 
 fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
     let new_init = wrap_awaiter("            return true;");
-    let result = replace_fn_body(content, "init(externalCorrelationId", &new_init)
-        .context("patch init(externalCorrelationId) failed")?;
 
     // Return a stub instead of null — editorapp.js calls
     // `licensingSdk.getInstance().getConnectedPipeName()` without try/catch,
@@ -129,16 +167,23 @@ fn patch_licensing_sdk_js(content: &str) -> anyhow::Result<String> {
             setAccessToken() { return Promise.resolve(); },
         };
     }"#;
-    replace_fn_body(&result, "getInstance(", new_get_instance).context("patch getInstance failed")
+    patch_all(
+        content,
+        &[
+            (
+                "licensingSdk init(externalCorrelationId)",
+                "init(externalCorrelationId",
+                &new_init,
+            ),
+            ("licensingSdk getInstance", "getInstance(", new_get_instance),
+        ],
+    )
+    .context("patch licensingSdk.js failed")
 }
 
 fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
     // 1. Replace isUserSignedIn() → return true (3.7+ only)
     let new_signed_in = wrap_async_body("        return true;");
-    let after_signed_in = match replace_fn_body(content, "isUserSignedIn(", &new_signed_in) {
-        Some(s) => s,
-        None => content.to_string(),
-    };
 
     // 2. Replace constructor() — inject fake userInfo.
     // CommonJS adds an extra `identifier` field (not present in ESM/Tuanjie)
@@ -171,11 +216,6 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
             createdAt: '1970-01-01T00:00:00.000Z',
         };
     }"#;
-    let after_constructor = match replace_fn_body(&after_signed_in, "constructor(", new_constructor)
-    {
-        Some(s) => s,
-        None => after_signed_in,
-    };
 
     // 3. Replace restoreAuthState() — set loggedIn and broadcast events
     let new_restore = wrap_awaiter(
@@ -203,10 +243,23 @@ fn patch_auth_service_js(content: &str) -> anyhow::Result<String> {
                 topic: PostalTopic_1.default.LOGGED_IN,
             });",
     );
-    match replace_fn_body(&after_constructor, "restoreAuthState(", &new_restore) {
-        Some(s) => Ok(s),
-        None => Ok(after_constructor),
-    }
+    patch_all(
+        content,
+        &[
+            (
+                "AuthService isUserSignedIn",
+                "isUserSignedIn(",
+                &new_signed_in,
+            ),
+            ("AuthService constructor", "constructor(", new_constructor),
+            (
+                "AuthService restoreAuthState",
+                "restoreAuthState(",
+                &new_restore,
+            ),
+        ],
+    )
+    .context("patch AuthService.js failed")
 }
 
 #[cfg(test)]
