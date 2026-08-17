@@ -196,19 +196,32 @@ fn build_hub_group(vendor: Vendor, hub_root: &Path, asar_path: &Path) -> Option<
 mod tests {
     use super::*;
 
-    /// 构造 `<tmp>\<version>\Editor\Unity.exe`,返回 `<tmp>\<version>` 这一层。
-    fn make_install(tmp: &Path, version: &str) -> PathBuf {
+    /// 构造 `<tmp>\<version>\Editor\<vendor>.exe`,返回 `<tmp>\<version>` 这一层。
+    fn make_install(tmp: &Path, version: &str, vendor: Vendor) -> PathBuf {
         let editor_dir = tmp.join(version).join("Editor");
         std::fs::create_dir_all(&editor_dir).unwrap();
-        std::fs::write(editor_dir.join(Vendor::Unity.exe_name()), b"").unwrap();
+        std::fs::write(editor_dir.join(vendor.exe_name()), b"").unwrap();
         tmp.join(version)
+    }
+
+    #[test]
+    fn add_if_valid_install_collects_tuanjie() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = make_install(tmp.path(), "2022.3.62t5", Vendor::Tuanjie);
+
+        let mut installs = Vec::new();
+        let mut seen = HashSet::new();
+        add_if_valid_install(&root, "2022.3.62t5", &mut installs, &mut seen);
+
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].vendor, Vendor::Tuanjie);
     }
 
     #[cfg(windows)]
     #[test]
     fn add_if_valid_install_dedupes_by_case() {
         let tmp = tempfile::tempdir().unwrap();
-        let root = make_install(tmp.path(), "2022.3.62f3");
+        let root = make_install(tmp.path(), "2022.3.62f3", Vendor::Unity);
         // 同一物理安装根的另一种大小写形式 (Windows 文件系统不区分大小写,
         // 两种写法都指向同一目录,均能命中 exe 检查)。
         let upper = root.to_string_lossy().to_uppercase();
@@ -227,7 +240,7 @@ mod tests {
     #[test]
     fn add_if_valid_install_dedupes_canonical_alias() {
         let tmp = tempfile::tempdir().unwrap();
-        let root = make_install(tmp.path(), "2022.3.62f3");
+        let root = make_install(tmp.path(), "2022.3.62f3", Vendor::Unity);
         let alias = root.join("..").join("2022.3.62f3");
 
         let mut installs = Vec::new();
@@ -241,8 +254,8 @@ mod tests {
     #[test]
     fn add_if_valid_install_collects_distinct_roots() {
         let tmp = tempfile::tempdir().unwrap();
-        let root_a = make_install(tmp.path(), "2022.3.62f3");
-        let root_b = make_install(tmp.path(), "6000.4.8f1");
+        let root_a = make_install(tmp.path(), "2022.3.62f3", Vendor::Unity);
+        let root_b = make_install(tmp.path(), "6000.4.8f1", Vendor::Unity);
 
         let mut installs = Vec::new();
         let mut seen = HashSet::new();

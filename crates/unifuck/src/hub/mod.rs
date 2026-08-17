@@ -429,6 +429,32 @@ mod tests {
     }
 
     #[test]
+    fn patch_embedded_asar_hash_rewrites_tuanjie_hub_exe() {
+        let original = original_asar_bytes();
+        let (_guard, asar_path) = setup_hub(&original);
+        let root = asar_path.parent().unwrap().parent().unwrap();
+        // Tuanjie Hub exe 名由 vendor 解析, fuse 布局与 Unity 相同
+        let exe_path = root.join("Tuanjie Hub.exe");
+        let old_hash = asar_header_hash(&asar_path).unwrap();
+        let new_hash = "9".repeat(64);
+        let exe_content = format!(
+            "{{\"resources\\\\app.asar\",\"alg\":\"SHA256\",\"value\":\"{}\"}}",
+            old_hash
+        );
+        std::fs::write(&exe_path, &exe_content).unwrap();
+        let info = HubInfo {
+            version: "1.4.2".to_string(),
+            vendor: Vendor::Tuanjie,
+            root: root.to_path_buf(),
+        };
+        patch_embedded_asar_hash(&info, &old_hash, &new_hash).unwrap();
+        let patched = std::fs::read_to_string(&exe_path).unwrap();
+        assert!(patched.contains(&new_hash));
+        assert!(!patched.contains(&old_hash));
+        assert_eq!(patched.len(), exe_content.len());
+    }
+
+    #[test]
     fn patch_embedded_asar_hash_skips_when_no_fuse() {
         let original = original_asar_bytes();
         let (_guard, asar_path) = setup_hub(&original);

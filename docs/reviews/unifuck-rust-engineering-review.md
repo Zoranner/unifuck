@@ -52,7 +52,7 @@
 
 **级别：中**
 
-仓库提交了 `keys/mod/priv.key`、`keys/mod/*.cer`、`keys/orig/*.cer` 和 `license.xml`。结合当前用途，它们更像用于替换和生成输出的内置补丁素材，不一定是需要保密的生产密钥。但目录名和文件名使用 `keys`、`priv.key`，会让安全扫描、代码审查和后续维护者自然按敏感密钥理解。
+仓库提交了 `keys/<vendor>/mod/priv.key`、`keys/<vendor>/mod/*.pem`、`keys/<vendor>/orig/*.pem` 和 `license.xml`。结合当前用途，它们更像用于替换和生成输出的内置补丁素材，不一定是需要保密的生产密钥。但目录名和文件名使用 `keys`、`priv.key`，会让安全扫描、代码审查和后续维护者自然按敏感密钥理解。
 
 建议保留仓库内置方式，但调整工程语义：
 

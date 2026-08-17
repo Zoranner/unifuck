@@ -657,6 +657,8 @@ mod tests {
         let prefix = Path::new(r"C:\Program Files");
         let root = default_editor_root(prefix, crate::vendor::Vendor::Unity);
         assert_eq!(root, Path::new(r"C:\Program Files\Unity\Hub\Editor"));
+        let root = default_editor_root(prefix, crate::vendor::Vendor::Tuanjie);
+        assert_eq!(root, Path::new(r"C:\Program Files\Tuanjie\Hub\Editor"));
     }
 
     #[test]
@@ -676,6 +678,22 @@ mod tests {
         let expected = tmp.path().join(r"Unity\Hub\Editor\2022.3.62f3");
         assert!(roots.contains(&expected), "应收录含 Editor 子目录的版本根");
         assert!(!roots.contains(&bad), "缺 Editor 子目录的版本应被跳过");
+        assert_eq!(roots.len(), 1);
+    }
+
+    #[test]
+    fn scan_editor_root_collects_tuanjie_versions() {
+        let tmp = tempfile::tempdir().unwrap();
+        // Tuanjie 合法版本: <tmp>\Tuanjie\Hub\Editor\2022.3.62t5\Editor\Tuanjie.exe
+        let good = tmp.path().join(r"Tuanjie\Hub\Editor\2022.3.62t5\Editor");
+        std::fs::create_dir_all(&good).unwrap();
+        std::fs::write(good.join("Tuanjie.exe"), b"").unwrap();
+
+        let editor_root = default_editor_root(tmp.path(), crate::vendor::Vendor::Tuanjie);
+        let roots = scan_editor_root(&editor_root);
+
+        let expected = tmp.path().join(r"Tuanjie\Hub\Editor\2022.3.62t5");
+        assert!(roots.contains(&expected), "应收录 Tuanjie 版本根");
         assert_eq!(roots.len(), 1);
     }
 
