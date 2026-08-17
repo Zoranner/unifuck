@@ -87,7 +87,7 @@ impl Vendor {
     /// 签 license 用的 RSA 私钥 PEM (从 keys/<vendor>/mod/priv.key 嵌入)。
     pub fn priv_key_pem(self) -> &'static str {
         match self {
-            Vendor::Unity => include_str!("../keys/mod/priv.key"),
+            Vendor::Unity => include_str!("../keys/unity/mod/priv.key"),
             Vendor::Tuanjie => include_str!("../keys/tuanjie/mod/priv.key"),
         }
     }

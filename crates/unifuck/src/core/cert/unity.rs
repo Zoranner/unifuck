@@ -4,9 +4,9 @@ use std::path::Path;
 use super::super::base64_lines;
 
 pub(super) const UNITY_ORIG_CERT_PEM: &[u8] =
-    include_bytes!("../../../keys/orig/Unity.Licensing.EntitlementResolver.Unity.cer");
+    include_bytes!("../../../keys/unity/orig/Unity.Licensing.EntitlementResolver.Unity.cer");
 pub(super) const UNITY_MOD_CERT_PEM: &[u8] =
-    include_bytes!("../../../keys/mod/Unity.Licensing.EntitlementResolver.Unity.cer");
+    include_bytes!("../../../keys/unity/mod/Unity.Licensing.EntitlementResolver.Unity.cer");
 
 /// 在字节数组中搜索 `old` 并原地替换为 `new`。
 ///
