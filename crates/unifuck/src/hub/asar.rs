@@ -125,7 +125,7 @@ fn align4(n: usize) -> usize {
     (n + 3) & !3
 }
 
-fn walk_asar(header: &Value) -> Vec<(String, Value)> {
+pub(crate) fn walk_asar(header: &Value) -> Vec<(String, Value)> {
     let mut result = Vec::new();
     walk_recursive(header, "", &mut result);
     result

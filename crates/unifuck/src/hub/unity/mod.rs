@@ -2,6 +2,7 @@
 
 pub(crate) mod commonjs;
 pub(crate) mod esm;
+pub(crate) mod vite;
 
 use crate::hub::asar::AsarArchive;
 use crate::hub::strategy::PatchStrategy;
@@ -19,6 +20,11 @@ pub(crate) fn detect_strategy(asar: &AsarArchive) -> anyhow::Result<Box<dyn Patc
     let commonjs_strategy = commonjs::CommonJsStrategy;
     if commonjs_strategy.applies_to(asar) {
         return Ok(Box::new(commonjs_strategy));
+    }
+
+    let vite_strategy = vite::ViteStrategy;
+    if vite_strategy.applies_to(asar) {
+        return Ok(Box::new(vite_strategy));
     }
 
     anyhow::bail!("Unsupported Unity Hub format")
