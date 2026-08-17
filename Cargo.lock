@@ -5301,7 +5301,7 @@ checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "unifuck"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "anyhow",
  "base64",
@@ -5322,7 +5322,7 @@ dependencies = [
 
 [[package]]
 name = "unifuck-loader"
-version = "0.4.3"
+version = "0.4.4"
 dependencies = [
  "log",
  "once_cell",
