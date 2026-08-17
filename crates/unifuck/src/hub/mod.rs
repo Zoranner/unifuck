@@ -9,6 +9,7 @@ use crate::hub::strategy::PatchStrategy;
 use crate::vendor::Vendor;
 use anyhow::Context;
 use serde_json::Value;
+use sha2::Digest;
 use std::path::{Path, PathBuf};
 
 // ── Constants ──────────────────────────────────────────────────
@@ -75,6 +76,59 @@ fn extract_version_from_json_str(s: &str) -> Option<String> {
     v.get("version")?.as_str().map(|s| s.to_string())
 }
 
+// ── Embedded Asar Hash Fix ──────────────────────────────────────
+
+/// Unity Hub 3.20+ enables Electron's `EnableEmbeddedAsarIntegrityValidation`
+/// fuse: the Hub executable embeds the SHA-256 of the asar header JSON
+/// (e.g. `{"resources\app.asar","alg":"SHA256","value":"<hex>"}`) and aborts
+/// at startup when the on-disk header no longer matches. Patching rewrites
+/// the header, so the embedded hash must be patched in place afterwards.
+///
+/// The embedded value is exactly 64 hex chars, so the replacement is
+/// byte-length-preserving and the surrounding JSON stays valid.
+///
+/// Computes the SHA-256 hex of the asar header JSON.
+fn asar_header_hash(path: &std::path::Path) -> anyhow::Result<String> {
+    let bytes = std::fs::read(path).with_context(|| format!("read asar: {}", path.display()))?;
+    anyhow::ensure!(bytes.len() >= 16, "asar file too small");
+    let header_len = u32::from_le_bytes(bytes[12..16].try_into()?) as usize;
+    anyhow::ensure!(
+        16 + header_len <= bytes.len(),
+        "asar header exceeds file size"
+    );
+    let hash = sha2::Sha256::digest(&bytes[16..16 + header_len]);
+    Ok(hash.iter().map(|b| format!("{:02x}", b)).collect())
+}
+
+/// Rewrite the asar header hash embedded in the Hub exe, replacing
+/// `old_hash_hex` with `new_hash_hex` (both 64 hex chars, so the exe size
+/// and surrounding JSON layout are preserved).
+///
+/// Hubs without the integrity fuse (3.5/3.18) do not embed the hash; the
+/// lookup misses and the function skips silently.
+fn patch_embedded_asar_hash(
+    info: &HubInfo,
+    old_hash_hex: &str,
+    new_hash_hex: &str,
+) -> anyhow::Result<()> {
+    let exe_path = info.root.join(format!("{}.exe", info.vendor.hub_name()));
+    let data = std::fs::read(&exe_path)
+        .with_context(|| format!("read hub exe: {}", exe_path.display()))?;
+    let Some(pos) = data.windows(64).position(|w| w == old_hash_hex.as_bytes()) else {
+        crate::diag::log("embedded asar hash not present in hub exe, skipping (no fuse)");
+        return Ok(());
+    };
+    let mut patched_exe = data;
+    patched_exe[pos..pos + 64].copy_from_slice(new_hash_hex.as_bytes());
+    std::fs::write(&exe_path, &patched_exe)
+        .with_context(|| format!("write hub exe: {}", exe_path.display()))?;
+    crate::diag::log(&format!(
+        "embedded asar hash updated: {} -> {}",
+        old_hash_hex, new_hash_hex
+    ));
+    Ok(())
+}
+
 // ── Main Patch / Unpatch ───────────────────────────────────────
 
 pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
@@ -89,7 +143,11 @@ pub(crate) fn patch_hub(info: &HubInfo) -> anyhow::Result<()> {
         Vendor::Tuanjie => tuanjie::detect_strategy(&asar)?,
     };
 
-    patch_asar_with_strategy(&asar_path, &asar, strategy.as_ref())
+    let old_hash = asar_header_hash(&asar_path)?;
+    patch_asar_with_strategy(&asar_path, &asar, strategy.as_ref())?;
+    let new_hash = asar_header_hash(&asar_path)?;
+    patch_embedded_asar_hash(info, &old_hash, &new_hash)?;
+    Ok(())
 }
 
 /// Patch the asar at `asar_path` using the given strategy.
@@ -152,8 +210,11 @@ pub(crate) fn unpatch_hub(info: &HubInfo) -> anyhow::Result<()> {
     if !bak_path.exists() {
         anyhow::bail!("no backup: {}", bak_path.display());
     }
+    let old_hash = asar_header_hash(&asar_path)?;
     std::fs::copy(&bak_path, &asar_path).context("restore asar failed")?;
     std::fs::remove_file(&bak_path).context("remove backup failed")?;
+    let new_hash = asar_header_hash(&asar_path)?;
+    patch_embedded_asar_hash(info, &old_hash, &new_hash)?;
     Ok(())
 }
 
@@ -323,5 +384,69 @@ mod tests {
         assert!(is_hub_patched(
             asar_path.parent().unwrap().parent().unwrap()
         ));
+    }
+
+    #[test]
+    fn asar_header_hash_matches_sha256_of_header_json() {
+        let original = original_asar_bytes();
+        let (_guard, asar_path) = setup_hub(&original);
+        let hash = asar_header_hash(&asar_path).unwrap();
+        assert_eq!(hash.len(), 64);
+        // 与原始字节的 header JSON 段 sha256 一致
+        let bytes = std::fs::read(&asar_path).unwrap();
+        let header_len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+        let expect: String = sha2::Sha256::digest(&bytes[16..16 + header_len])
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+        assert_eq!(hash, expect);
+    }
+
+    #[test]
+    fn patch_embedded_asar_hash_rewrites_in_place() {
+        let original = original_asar_bytes();
+        let (_guard, asar_path) = setup_hub(&original);
+        let root = asar_path.parent().unwrap().parent().unwrap();
+        let exe_path = root.join("Unity Hub.exe");
+        // 模拟 fuse 布局: exe 内嵌 old hash + 周围 JSON 文本
+        let old_hash = asar_header_hash(&asar_path).unwrap();
+        let new_hash = "9".repeat(64);
+        let exe_content = format!(
+            "{{\"resources\\\\app.asar\",\"alg\":\"SHA256\",\"value\":\"{}\"}}",
+            old_hash
+        );
+        std::fs::write(&exe_path, &exe_content).unwrap();
+        let info = HubInfo {
+            version: "3.20.1".to_string(),
+            vendor: Vendor::Unity,
+            root: root.to_path_buf(),
+        };
+        patch_embedded_asar_hash(&info, &old_hash, &new_hash).unwrap();
+        let patched = std::fs::read_to_string(&exe_path).unwrap();
+        assert!(patched.contains(&new_hash));
+        assert!(!patched.contains(&old_hash));
+        assert_eq!(patched.len(), exe_content.len());
+    }
+
+    #[test]
+    fn patch_embedded_asar_hash_skips_when_no_fuse() {
+        let original = original_asar_bytes();
+        let (_guard, asar_path) = setup_hub(&original);
+        let root = asar_path.parent().unwrap().parent().unwrap();
+        let exe_path = root.join("Unity Hub.exe");
+        std::fs::write(&exe_path, b"no embedded hash here").unwrap();
+        let info = HubInfo {
+            version: "3.5.0".to_string(),
+            vendor: Vendor::Unity,
+            root: root.to_path_buf(),
+        };
+        // 无 fuse 的 Hub 找不到 old hash → 静默跳过, 不报错
+        let old_hash = "a".repeat(64);
+        let new_hash = "b".repeat(64);
+        patch_embedded_asar_hash(&info, &old_hash, &new_hash).unwrap();
+        assert_eq!(
+            std::fs::read(&exe_path).unwrap(),
+            b"no embedded hash here".to_vec()
+        );
     }
 }
