@@ -1,7 +1,8 @@
 use crate::vendor::Vendor;
 
-use super::restore_from_backup;
-use super::{tuanjie, unity};
+use super::binary::{bak_path, patch_binary_file, restore_from_backup};
+use super::tuanjie::{TUANJIE_MOD_CERT_PEM, TUANJIE_ORIG_CERT_PEM};
+use super::unity::{UNITY_MOD_CERT_PEM, UNITY_ORIG_CERT_PEM};
 
 /// 补丁 Hub 安装的全局共享 Licensing Client DLL。
 ///
@@ -23,16 +24,29 @@ pub fn patch_shared_licensing_client() -> anyhow::Result<()> {
             let dll_path = hub_root
                 .join(vendor.licensing_client_dir())
                 .join(vendor.dll_name());
+            if !dll_path.exists() || bak_path(&dll_path).exists() {
+                continue;
+            }
             match vendor {
                 Vendor::Unity => {
-                    unity::patch_binary_file(&dll_path, true, 0, true)?;
+                    patch_binary_file(
+                        &dll_path,
+                        UNITY_ORIG_CERT_PEM,
+                        UNITY_MOD_CERT_PEM,
+                        true,
+                        0,
+                        true,
+                    )?;
                 }
                 Vendor::Tuanjie => {
-                    if dll_path.exists() && !dll_path.with_extension("dll.bak").exists() {
-                        if let Err(e) = tuanjie::patch_dll(&dll_path) {
-                            eprintln!("warning: Tuanjie shared client patch failed: {}", e);
-                        }
-                    }
+                    patch_binary_file(
+                        &dll_path,
+                        TUANJIE_ORIG_CERT_PEM,
+                        TUANJIE_MOD_CERT_PEM,
+                        true,
+                        0,
+                        true,
+                    )?;
                 }
             }
         }
@@ -65,7 +79,7 @@ pub fn is_shared_licensing_client_patched() -> bool {
             let dll_path = hub_root
                 .join(vendor.licensing_client_dir())
                 .join(vendor.dll_name());
-            if dll_path.with_extension("dll.bak").exists() {
+            if bak_path(&dll_path).exists() {
                 return true;
             }
         }

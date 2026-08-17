@@ -1,6 +1,8 @@
 use anyhow::Context;
 use std::path::Path;
 
+use super::binary::bak_path;
+
 pub(super) const TUANJIE_ORIG_CERT_PEM: &str =
     include_str!("../../../keys/tuanjie/orig/Tuanjie.Licensing.EntitlementResolver.Tuanjie.pem");
 pub(super) const TUANJIE_MOD_CERT_PEM: &str =
@@ -17,12 +19,15 @@ pub(super) fn to_utf16le_crlf(s: &str) -> Vec<u8> {
     crlf.encode_utf16().flat_map(|c| c.to_le_bytes()).collect()
 }
 
-/// 补丁 Tuanjie Editor DLL 中 UTF-16LE 编码的 PEM 证书字符串。
+/// 补丁 Tuanjie DLL 中 UTF-16LE 编码的 PEM 证书字符串。
 ///
 /// Tuanjie DLL 将证书以 C# 字符串字面量形式存储在 .NET #US 堆中,
 /// 编码为 UTF-16LE。此函数通过字节替换实现证书替换,
 /// 无需修改 PE 头或 .NET 元数据。
-pub fn patch_dll(dll_path: &Path) -> anyhow::Result<()> {
+///
+/// 返回 `Ok(true)` 表示已替换; `Ok(false)` 表示 DLL 中未发现原始证书
+/// (shared client 场景允许静默跳过, Editor DLL 场景由调用方决定是否报错)。
+pub fn patch_dll(dll_path: &Path) -> anyhow::Result<bool> {
     let orig_utf16 = to_utf16le_crlf(TUANJIE_ORIG_CERT_PEM.trim_end());
     let mod_utf16 = to_utf16le_crlf(TUANJIE_MOD_CERT_PEM.trim_end());
 
@@ -50,14 +55,11 @@ pub fn patch_dll(dll_path: &Path) -> anyhow::Result<()> {
         .windows(orig_utf16.len())
         .position(|w| w == orig_utf16.as_slice())
     else {
-        anyhow::bail!(
-            "Tuanjie cert not found in DLL (UTF-16LE PEM): {}",
-            dll_path.display()
-        );
+        return Ok(false);
     };
 
     // 备份
-    let bak_path = dll_path.with_extension("dll.bak");
+    let bak_path = bak_path(dll_path);
     std::fs::write(&bak_path, &data)
         .with_context(|| format!("backup write failed: {}", bak_path.display()))?;
 
@@ -68,5 +70,5 @@ pub fn patch_dll(dll_path: &Path) -> anyhow::Result<()> {
     std::fs::write(dll_path, &data)
         .with_context(|| format!("write failed: {}", dll_path.display()))?;
 
-    Ok(())
+    Ok(true)
 }
