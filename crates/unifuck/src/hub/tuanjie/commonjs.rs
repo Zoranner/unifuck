@@ -13,9 +13,9 @@ use serde_json::Value;
 ///   so `setLoggedInFlags()` is never reached on an airgapped install.
 ///   Therefore `init()` itself must be replaced to call
 ///   `initNetworkInterceptors()` and then `setLoggedInFlags()` directly.
-pub(crate) struct TuanjieHubStrategy;
+pub(crate) struct CommonJsStrategy;
 
-impl TuanjieHubStrategy {
+impl CommonJsStrategy {
     const TARGET_FILES: &'static [&'static str] = &[
         "build/main/services/licenseService/licenseService.js",
         "build/main/services/licenseService/licensingSdk.js",
@@ -52,7 +52,7 @@ impl TuanjieHubStrategy {
     }
 }
 
-impl PatchStrategy for TuanjieHubStrategy {
+impl PatchStrategy for CommonJsStrategy {
     fn version_name(&self) -> &'static str {
         "Tuanjie Hub"
     }
